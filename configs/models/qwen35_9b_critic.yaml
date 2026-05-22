@@ -1,0 +1,10 @@
+model_role: critic
+model_name: qwen35_9b
+model_name_or_path: Qwen/Qwen3.5-9B
+device: cuda
+dtype: bfloat16
+quantization: null
+max_new_tokens: 1024
+temperature: 0.2
+top_p: 0.9
+serve_backend: transformers   # options: transformers, vllm, sglang

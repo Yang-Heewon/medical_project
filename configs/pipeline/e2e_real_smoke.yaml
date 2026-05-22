@@ -1,0 +1,29 @@
+pipeline_name: e2e_real_smoke
+work_dir: outputs/e2e_real_smoke
+
+# 실제 모델이 연결된 production smoke test.
+# CheXbert 라벨 merge가 끝난 CSV를 입력으로 사용하고, VLM generation도 실제 MedGemma로 수행한다.
+mode: real_smoke
+seed: 0
+seeds: [0]
+top_k: 2
+max_inference_samples: 3
+max_support_samples: 128
+data_csv_override: outputs/production/preprocessed/indiana_paired_samples_chexbert.csv
+
+configs:
+  data: configs/data/indiana.yaml
+  split: configs/split/stratified_70_30.yaml
+  retrieval: configs/retrieval/hybrid_rag_biomedclip.yaml
+  generator: configs/models/medgemma_real.yaml
+  critic: configs/models/qwen35_9b_critic.yaml
+  textgrad: configs/experiments/textgrad_prompt_optimization.yaml
+
+run:
+  preprocess: false
+  split: true
+  build_rag_db: true
+  textgrad: false
+  six_experiments: true
+  final_rag_vs_no_rag: true
+  summarize: true

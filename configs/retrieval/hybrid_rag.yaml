@@ -1,0 +1,40 @@
+retrieval_name: hybrid_rag
+
+# vision_encoder_name 후보:
+# - medsiglip
+# - medclip
+# - biovil
+# - chexzero
+# - dummy_hash        # 설치 확인/테스트용 fallback
+vision_encoder_name: dummy_hash
+embedding_dim: 384
+
+vector_store_backend: faiss
+top_k: 5
+
+# retrieval key 구성
+use_image_embedding: true
+use_report_embedding: true
+use_label_vector: true
+use_anatomy_pathology_phrase: true
+
+# same/similar 14-label filtering
+use_label_filter: true
+min_label_jaccard_for_related: 0.10
+
+# hybrid rank score = w_img * image_similarity + w_text * text_similarity + w_label * label_jaccard
+w_img: 0.50
+w_text: 0.25
+w_label: 0.25
+
+# unrelated RAG negative control sampling
+unrelated_sampling_policy: low_label_overlap_random
+max_label_jaccard_for_unrelated: 0.05
+
+output_dir: outputs/rag
+
+# Query-side retrieval inputs.
+# none = final/no-leakage setting: retrieve by image embedding only.
+# chexbert_labels_binary/gt_chexbert = oracle/debug only; do not use for final claims.
+query_label_source: none
+query_text_source: none

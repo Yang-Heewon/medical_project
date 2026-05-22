@@ -1,0 +1,30 @@
+retrieval_name: hybrid_rag_biomedclip
+vision_encoder_name: medclip
+model_name_or_path: hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224
+device: cuda
+batch_size: 32
+text_batch_size: 128
+
+vector_store_backend: faiss
+top_k: 5
+
+use_image_embedding: true
+use_report_embedding: true
+use_label_vector: true
+use_anatomy_pathology_phrase: true
+
+use_label_filter: true
+min_label_jaccard_for_related: 0.10
+
+w_img: 0.50
+w_text: 0.25
+w_label: 0.25
+
+unrelated_sampling_policy: low_label_overlap_random
+max_label_jaccard_for_unrelated: 0.05
+
+output_dir: outputs/rag
+
+# Final/no-leakage retrieval: query에는 GT report/label을 넣지 않고 image embedding만 사용한다.
+query_label_source: none
+query_text_source: none

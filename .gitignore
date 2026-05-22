@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local environments and caches
+.env
+.venv/
+venv/
+.cache/
+
+# Generated experiment artifacts
+outputs/
+logs/
+_trash_cleanup_*/
+
+# Large local data / model weights
+data/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*.faiss
+*.index
+*.parquet
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,27 @@
+pipeline_name: e2e_full
+work_dir: outputs/e2e_full
+
+# full은 같은 pipeline을 전체 inference set에 실행한다.
+# 주의: 현재 MedGemma/encoder/TextGrad 일부 adapter가 placeholder이면 production claim에 쓰면 안 된다.
+mode: full
+seed: 0
+seeds: [0, 1, 2, 3]
+top_k: 5
+max_inference_samples: null
+
+configs:
+  data: configs/data/indiana.yaml
+  split: configs/split/stratified_70_30.yaml
+  retrieval: configs/retrieval/hybrid_rag.yaml
+  generator: configs/models/medgemma.yaml
+  critic: configs/models/qwen35_9b_critic.yaml
+  textgrad: configs/experiments/textgrad_prompt_optimization.yaml
+
+run:
+  preprocess: true
+  split: true
+  build_rag_db: true
+  textgrad: true
+  six_experiments: true
+  final_rag_vs_no_rag: true
+  summarize: true

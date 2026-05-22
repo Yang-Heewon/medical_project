@@ -1,0 +1,28 @@
+model_role: generator
+model_name: medgemma
+backend: transformers
+model_name_or_path: google/medgemma-4b-it
+local_files_only: true
+trust_remote_code: false
+
+device: cuda
+device_map: auto
+max_memory:
+  0: 5GiB
+  1: 5GiB
+  2: 5GiB
+  3: 5GiB
+  4: 5GiB
+dtype: bfloat16
+quantization: 4bit
+load_in_4bit: true
+bnb_4bit_quant_type: nf4
+
+max_new_tokens: 384
+temperature: 0.0
+top_p: 1.0
+
+system_prompt: You are an expert radiologist. Return only valid JSON that matches the requested schema.
+include_context_images: true
+context_image_policy: frontal
+max_context_images: 1

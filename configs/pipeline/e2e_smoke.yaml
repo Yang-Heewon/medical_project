@@ -1,0 +1,26 @@
+pipeline_name: e2e_smoke
+work_dir: outputs/e2e_smoke
+
+# 이 smoke는 pipeline 배선 검증용이다. 논문 결과에는 production/full config를 사용한다.
+mode: smoke
+seed: 0
+seeds: [0]
+top_k: 2
+max_inference_samples: 12
+
+configs:
+  data: configs/data/indiana.yaml
+  split: configs/split/stratified_70_30.yaml
+  retrieval: configs/retrieval/hybrid_rag.yaml
+  generator: configs/models/medgemma.yaml
+  critic: configs/models/qwen35_9b_critic.yaml
+  textgrad: configs/experiments/textgrad_prompt_optimization.yaml
+
+run:
+  preprocess: true
+  split: true
+  build_rag_db: true
+  textgrad: true
+  six_experiments: true
+  final_rag_vs_no_rag: true
+  summarize: true

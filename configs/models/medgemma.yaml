@@ -1,0 +1,9 @@
+model_role: generator
+model_name: medgemma
+model_name_or_path: google/medgemma-4b-it
+device: cuda
+dtype: bfloat16
+quantization: null
+max_new_tokens: 512
+temperature: 0.0
+top_p: 1.0

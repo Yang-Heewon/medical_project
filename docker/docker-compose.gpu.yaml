@@ -1,0 +1,21 @@
+services:
+  vision-rag-cxr:
+    image: vision-rag-cxr:latest
+    container_name: vision-rag-cxr
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+      - /root/data:/root/data:ro
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      - PYTHONPATH=/workspace/src
+      - HF_HOME=/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true

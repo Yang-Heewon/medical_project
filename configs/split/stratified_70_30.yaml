@@ -1,0 +1,8 @@
+split_name: stratified_70_30
+split_unit: uid
+support_ratio: 0.7
+inference_ratio: 0.3
+seeds: [0, 1, 2, 3]
+stratify_on: chexbert_labels_binary
+min_positive_count_warning: 5
+max_prevalence_drift_warning: 0.05

@@ -1,0 +1,27 @@
+pipeline_name: e2e_real_full
+work_dir: outputs/e2e_real_full
+
+# 실제 연구 본실험용 config. 시간이 오래 걸린다.
+mode: real_full
+seed: 0
+seeds: [0, 1, 2, 3]
+top_k: 5
+max_inference_samples: null
+data_csv_override: outputs/production/preprocessed/indiana_paired_samples_chexbert.csv
+
+configs:
+  data: configs/data/indiana.yaml
+  split: configs/split/stratified_70_30.yaml
+  retrieval: configs/retrieval/hybrid_rag_biomedclip.yaml
+  generator: configs/models/medgemma_real.yaml
+  critic: configs/models/qwen35_9b_critic.yaml
+  textgrad: configs/experiments/textgrad_prompt_optimization.yaml
+
+run:
+  preprocess: false
+  split: true
+  build_rag_db: true
+  textgrad: false
+  six_experiments: true
+  final_rag_vs_no_rag: true
+  summarize: true

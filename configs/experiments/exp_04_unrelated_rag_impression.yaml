@@ -1,0 +1,13 @@
+experiment_name: unrelated_rag_impression
+task_type: impression
+rag_mode: unrelated
+generator_config: configs/models/medgemma.yaml
+critic_config: configs/models/qwen35_9b_critic.yaml
+retrieval_config: configs/retrieval/hybrid_rag.yaml
+split_csv: outputs/splits_chexbert/split_seed_0.csv
+support_metadata_path: outputs/rag_chexbert/support_metadata.parquet
+faiss_index_path: outputs/rag_chexbert/faiss_index/support.index
+prompt_version: v1
+top_k: 5
+seed: 0
+output_dir: outputs/experiments_chexbert_smoke/unrelated_rag_impression
