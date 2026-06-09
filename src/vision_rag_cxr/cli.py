@@ -86,6 +86,9 @@ def cmd_infer(args):
         "rag_modes": modes,
         "tasks": ["impression"],   # Vision-RAG 효과는 impression CheXbert F1로 측정
     }
+    # TextGrad로 최적화된 프롬프트를 No-RAG/RAG 생성에 주입 (textgrad-first 순서)
+    if getattr(args, "style_profile", None):
+        cfg["optimized_style_profile_path"] = args.style_profile
     # 디바이스 주입 (auto=cuda→mps→cpu). 맥(MPS)/CPU에서도 같은 명령으로 동작.
     for gc in cfg["generators"]:
         gc["device"] = args.device
@@ -161,6 +164,8 @@ def main():
     f.add_argument("--gpus", default="0", help="쉼표구분 CUDA GPU (예: 0,2,3). 맥/CPU면 단일값(예: 0) 또는 무시")
     f.add_argument("--device", default="auto", choices=["auto", "cuda", "mps", "cpu"],
                    help="auto=cuda→mps(Apple)→cpu 자동. 맥북은 auto 또는 mps")
+    f.add_argument("--style-profile", default=None,
+                   help="TextGrad로 최적화된 STYLE_PROFILE txt 경로 (textgrad-first 순서). 지정 시 No-RAG/RAG가 이 프롬프트로 생성")
     f.set_defaults(func=cmd_infer)
 
     args = ap.parse_args()

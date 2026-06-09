@@ -148,6 +148,9 @@ def run_sweep(cfg: dict):
             "split_csv": split_csvs[seed], "top_k": top_k, "seed": seed,
             "prompt_version": "sweep_v1", "output_dir": str(exp_dir),
         }
+        # TextGrad로 최적화된 STYLE_PROFILE이 있으면 No-RAG/RAG 생성에 사용 (textgrad-first 순서)
+        if cfg.get("optimized_style_profile_path"):
+            cfg_exp["optimized_style_profile_path"] = cfg["optimized_style_profile_path"]
         if rdir is not None:
             cfg_exp.update({
                 "support_metadata_path": str(rdir / "support_metadata.parquet"),
