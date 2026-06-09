@@ -24,7 +24,10 @@ accelerate>=0.30.0
 pillow>=10.0.0
 sentence-transformers>=3.0.0
 open-clip-torch>=3.0.0
-bitsandbytes>=0.43.0
+# HF 데이터셋 스트리밍 (vrag build --dataset indiana_hf 등)
+datasets>=2.14.0
+# bitsandbytes(4bit)는 CUDA 전용 -> macOS에서는 설치/사용 안 함
+bitsandbytes>=0.43.0; platform_system != "Darwin"
 
 # Optional report metrics
 bert-score>=0.3.13
