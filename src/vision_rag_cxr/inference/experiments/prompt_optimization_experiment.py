@@ -202,10 +202,16 @@ def run_prompt_optimization(config: dict) -> dict:
     ]
 
     current_style = init_style
+    current_results = baseline_results       # 현재 best의 per-sample 결과 (반복 탐색의 기준)
+    patience = int(config.get("early_stop_patience", 10))
+    no_improve = 0
+    hist_path = Path(out_dir) / "prompt_optimization_history.csv"
+    pd.DataFrame(history).to_csv(hist_path, index=False)  # baseline 즉시 기록
+
     for epoch in range(1, max_epochs + 1):
-        # 1. critic 피드백 수집 (현재 best prediction 기준).
+        # 1. critic 피드백: '현재 best' 예측 기준으로 비평 -> epoch마다 새 방향 탐색
         critiques = []
-        for r in baseline_results[:critique_size]:
+        for r in current_results[:critique_size]:
             gt_abn = {l for l in _ABNORMAL_LABELS if r["gt"].get(l, 0) == 1}
             pred_abn = {l for l in _ABNORMAL_LABELS if r["pred"].get(l, 0) == 1}
             sample_metrics = {
@@ -217,18 +223,17 @@ def run_prompt_optimization(config: dict) -> dict:
                 critic.critique(str(r["raw"]), str(r.get("uid", "")), r, sample_metrics)
             )
 
-        # 2. candidate STYLE_PROFILE 생성.
+        # 2. candidate STYLE_PROFILE 생성 (현재 best prompt를 critic이 개선)
         candidate_style = critic.rewrite_style_profile(current_style, critiques, best_metrics)
 
-        # 3. candidate로 재생성 + metric.
+        # 3. candidate로 재생성 + metric
         cand_results = _generate_dev(generator, dev_rows, candidate_style, labeler)
         cand_metrics = _aggregate_metrics(cand_results, baseline_results)
         cand_lesion = [r["lesion_score"] for r in cand_results]
 
-        # 4. 병변 보존 통계 gate.
+        # 4. 병변 보존 통계 gate (병변 유사도 유지 검정)
         gate = evaluate_lesion_preservation_ttest(
-            baseline_lesion,
-            cand_lesion,
+            baseline_lesion, cand_lesion,
             margin=float(gate_cfg.get("margin", 0.03)),
             alpha=float(gate_cfg.get("alpha", 0.05)),
             mode=gate_cfg.get("mode", "noninferiority"),
@@ -244,17 +249,31 @@ def run_prompt_optimization(config: dict) -> dict:
             best_metrics = cand_metrics
             best_gate = gate
             current_style = candidate_style
+            current_results = cand_results
+            no_improve = 0
+        else:
+            no_improve += 1
 
         history.append(
             {
                 "epoch": epoch,
                 "stage": "candidate",
                 "clinical_f1": round(cand_metrics["clinical_f1"], 4),
+                "best_clinical_f1": round(best_metrics["clinical_f1"], 4),
                 "normal_collapse_rate": round(cand_metrics["normal_collapse_rate"], 4),
                 "lesion_gate_pass": bool(gate.get("lesion_preservation_pass")),
                 "accepted": bool(adopt),
+                "no_improve": no_improve,
             }
         )
+        pd.DataFrame(history).to_csv(hist_path, index=False)  # epoch별 진행 즉시 저장(모니터링용)
+        save_style_profile(best_style, Path(out_dir) / "optimized_style_profile.txt")
+
+        # early stopping: patience epoch 동안 개선 없으면 종료
+        if no_improve >= patience:
+            history.append({"epoch": epoch, "stage": f"early_stop(patience={patience})", "accepted": False})
+            pd.DataFrame(history).to_csv(hist_path, index=False)
+            break
 
     # 저장
     save_style_profile(best_style, Path(out_dir) / "optimized_style_profile.txt")

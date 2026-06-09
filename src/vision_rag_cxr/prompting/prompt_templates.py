@@ -25,7 +25,6 @@ Output JSON schema:
   "no_finding_claim": true/false
 }}
 
-Support examples:
 {context_examples}
 """
 
@@ -53,6 +52,5 @@ Important:
 If no lesion is visible, return an empty lesions list.
 Do not invent a lesion just because support examples contain one.
 
-Support examples:
 {context_examples}
 """
