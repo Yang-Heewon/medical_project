@@ -193,6 +193,13 @@ def _load_generators_critic(config: dict):
             generators.append(build_generator(gc))
     else:
         generators = [build_generator(gen_cfg)]
+    # 중요: transformers from_pretrained는 스레드 동시 로딩에 안전하지 않다.
+    # 생성기들을 '순차로' 먼저 로드해 두면, 이후 _generate_dev의 스레드 병렬 생성은 안전하다.
+    for g in generators:
+        try:
+            g.load()
+        except Exception as e:
+            print(f"[textgrad] generator load warn: {e}", flush=True)
     return generators, build_critic(crit_cfg)
 
 
