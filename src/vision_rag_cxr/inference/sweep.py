@@ -142,12 +142,21 @@ def run_sweep(cfg: dict):
         exp_name = f"{gen_tag}__{enc_tag}__{rag_mode}__{task}__seed{seed}"
         exp_dir = ensure_dir(Path(out_dir) / "experiments" / exp_name)
         rdir = rag_dirs.get((seed, enc_tag))
+        # related_oracle = RAG retrieve 최대화(upper-bound): query GT label과 라벨-유사한 support 검색
+        eff_rag_mode = "related" if rag_mode == "related_oracle" else rag_mode
         cfg_exp = {
-            "experiment_name": exp_name, "task_type": task, "rag_mode": rag_mode,
+            "experiment_name": exp_name, "task_type": task, "rag_mode": eff_rag_mode,
             "generator_config": gen, "retrieval_config": enc.get("_config_path", ""),
             "split_csv": split_csvs[seed], "top_k": top_k, "seed": seed,
             "prompt_version": "sweep_v1", "output_dir": str(exp_dir),
         }
+        if rag_mode == "related_oracle":
+            # query GT 라벨로 라벨-유사 support를 검색(라벨 가중↑, 라벨 필터 on) = retrieval 상한
+            cfg_exp.update({
+                "query_label_source": "chexbert_labels_binary",
+                "use_label_filter": True, "min_label_jaccard_for_related": 0.1,
+                "w_img": 0.3, "w_text": 0.1, "w_label": 0.6,
+            })
         # TextGrad로 최적화된 STYLE_PROFILE이 있으면 No-RAG/RAG 생성에 사용 (textgrad-first 순서)
         if cfg.get("optimized_style_profile_path"):
             cfg_exp["optimized_style_profile_path"] = cfg["optimized_style_profile_path"]

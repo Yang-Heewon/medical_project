@@ -26,6 +26,12 @@ def build_retriever_config(experiment_config: dict) -> dict:
         "seed",
         "query_label_source",
         "query_text_source",
+        "use_label_filter",
+        "min_label_jaccard_for_related",
+        "w_img",
+        "w_text",
+        "w_label",
+        "label_space",
     ]:
         if key in experiment_config:
             cfg[key] = experiment_config[key]

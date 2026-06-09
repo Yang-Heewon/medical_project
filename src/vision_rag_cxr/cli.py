@@ -64,7 +64,8 @@ def cmd_build(args):
 
 # ---- ③ infer ----------------------------------------------------------------
 def cmd_infer(args):
-    mode_map = {"no_rag": "image_only", "image_only": "image_only", "related": "related", "unrelated": "unrelated"}
+    mode_map = {"no_rag": "image_only", "image_only": "image_only", "related": "related",
+                "related_oracle": "related_oracle", "unrelated": "unrelated"}
     modes = [mode_map[m.strip()] for m in args.modes.split(",")]
     gens = [g.strip() for g in args.generators.split(",")]
     for g in gens:
