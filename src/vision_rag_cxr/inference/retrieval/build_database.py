@@ -17,16 +17,18 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from vision_rag_cxr.data.labeler_chexbert import CHEXBERT_LABELS
-from vision_rag_cxr.models.vision_encoder_base import build_vision_encoder
-from vision_rag_cxr.rag.vector_store import VectorStore
+from vision_rag_cxr.datasets.labeler_chexbert import CHEXBERT_LABELS
+from vision_rag_cxr.datasets.label_spaces import resolve_labels, write_label_space_sidecar
+from vision_rag_cxr.models.encoders.base import build_vision_encoder
+from vision_rag_cxr.inference.retrieval.vector_store import VectorStore
 from vision_rag_cxr.utils.io import ensure_dir
 
 
-def label_dict_to_vec(label_json) -> np.ndarray:
-    """label dict를 고정 순서 vector로 변환한다."""
+def label_dict_to_vec(label_json, labels: list[str] | None = None) -> np.ndarray:
+    """label dict를 고정 순서 vector로 변환한다. labels 미지정 시 CheXbert 14."""
+    labels = labels or CHEXBERT_LABELS
     d = json.loads(label_json) if isinstance(label_json, str) else label_json
-    return np.asarray([int(d.get(label, 0)) for label in CHEXBERT_LABELS], dtype="float32")
+    return np.asarray([int(d.get(label, 0)) for label in labels], dtype="float32")
 
 
 def extract_anatomy_pathology_phrase(row: pd.Series) -> str:
@@ -58,13 +60,14 @@ def build_support_database(split_csv: str, config: dict) -> None:
         print(f"Using support subset for DB build: {len(support)} samples", flush=True)
 
     encoder = build_vision_encoder(config)
+    labels = resolve_labels(config)
 
     support_rows = [row.to_dict() for _, row in support.iterrows()]
     metadata_rows = []
     label_vectors = []
 
     for row in support_rows:
-        label_vectors.append(label_dict_to_vec(row["chexbert_labels_binary"]))
+        label_vectors.append(label_dict_to_vec(row["chexbert_labels_binary"], labels))
         metadata_rows.append(
             {
                 "uid": row["uid"],
@@ -101,6 +104,8 @@ def build_support_database(split_csv: str, config: dict) -> None:
 
     out_dir = ensure_dir(config.get("output_dir", "outputs/rag"))
     index_dir = ensure_dir(Path(out_dir) / "faiss_index")
+    # 어떤 label space로 label_vectors를 만들었는지 sidecar로 남겨 retriever가 그대로 복원한다.
+    write_label_space_sidecar(out_dir, config.get("label_space", "chexbert_14"))
 
     # 기본 retrieval index는 image embedding 기준으로 저장.
     store = VectorStore(dim=image_embeddings.shape[1])

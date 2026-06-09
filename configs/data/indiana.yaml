@@ -1,0 +1,27 @@
+data_name: indiana_iu_cxr
+
+# 서버 기준 원본 경로 (.env.example과 동일). 다른 경로면 여기만 바꾼다.
+image_root: /root/data/images/images_normalized
+report_csv: /root/data/label/indiana_reports.csv
+# projection_csv: 지정 안 하면 report_csv 옆의 indiana_projections.csv를 자동 탐색하고,
+# 없으면 uid prefix 파일명 정렬 fallback으로 frontal/lateral pair를 만든다.
+projection_csv: null
+
+output_dir: outputs/preprocessed
+
+# pairing 정책
+require_frontal_lateral: true     # frontal+lateral 둘 다 있는 uid만 사용
+verify_image_exists: true         # projection metadata의 파일이 실제로 있을 때만 사용
+min_impression_chars: 0           # impression/findings 최소 길이 필터
+
+# labeling 정책 (CheXbertLikeLabeler fallback용)
+labeling:
+  primary_label_source: impression
+  secondary_label_source: findings_impression
+  use_findings_secondary: true
+  uncertain_policy: u_ones        # uncertain -> binary 1, raw -> -1 보존
+  min_primary_chars: 3
+
+# 참고: 논문/보고 결과는 외부 CheXbert backend로 생성해
+# scripts/11_export_chexbert_input.py -> CheXbert -> scripts/10_merge_chexbert_labels.py로 merge.
+label_space: chexbert_14

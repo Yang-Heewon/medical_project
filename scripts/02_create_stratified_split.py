@@ -12,7 +12,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from vision_rag_cxr.data.splitters import create_splits
+from vision_rag_cxr.datasets.splitters import create_splits
 from vision_rag_cxr.utils.io import load_yaml
 
 

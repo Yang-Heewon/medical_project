@@ -9,6 +9,9 @@ description = "Modular E2E Vision-RAG framework for Indiana University Chest X-r
 requires-python = ">=3.10"
 dependencies = []
 
+[project.scripts]
+vrag = "vision_rag_cxr.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

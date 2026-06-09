@@ -18,7 +18,9 @@ logs/
 _trash_cleanup_*/
 
 # Large local data / model weights
-data/
+# NOTE: leading slash로 repo 루트의 ./data/만 무시한다.
+# 과거 `data/`는 src/vision_rag_cxr/data/ 와 configs/data/ 까지 같이 무시해 핵심 코드가 push 안 됐다.
+/data/
 checkpoints/
 *.pt
 *.pth

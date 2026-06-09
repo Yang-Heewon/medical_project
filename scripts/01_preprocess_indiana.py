@@ -4,7 +4,7 @@
 """Indiana University Chest X-ray 전처리 entrypoint.
 
 config-driven src pipeline을 호출한다. 이전 standalone 로직은
-``vision_rag_cxr.data.indiana_preprocessor``로 모았다.
+``vision_rag_cxr.datasets.indiana``로 모았다.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from vision_rag_cxr.data.indiana_preprocessor import preprocess_indiana
+from vision_rag_cxr.datasets.indiana import preprocess_indiana
 from vision_rag_cxr.utils.io import load_yaml
 
 

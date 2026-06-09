@@ -18,7 +18,8 @@ faiss-cpu>=1.7.4
 # Vision/Text models
 torch>=2.1.0
 torchvision>=0.16.0
-transformers>=4.45.0
+# transformers 5.x는 open_clip(BiomedCLIP BertModel)/Qwen 로딩과 호환되지 않는다. 4.x로 고정.
+transformers>=4.45.0,<5
 accelerate>=0.30.0
 pillow>=10.0.0
 sentence-transformers>=3.0.0

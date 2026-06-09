@@ -7,11 +7,11 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from vision_rag_cxr.experiments.experiment_base import ExperimentBase
-from vision_rag_cxr.models.vlm_generator import build_generator
+from vision_rag_cxr.inference.experiments.experiment_base import ExperimentBase
+from vision_rag_cxr.models.generators.factory import build_generator
 from vision_rag_cxr.prompting.prompt_templates import BASE_STYLE_PROFILE, LOCALIZATION_PROMPT
-from vision_rag_cxr.rag.prompt_context_builder import build_context_examples_text
-from vision_rag_cxr.rag.retriever_factory import build_retriever_for_experiment
+from vision_rag_cxr.inference.retrieval.prompt_context_builder import build_context_examples_text
+from vision_rag_cxr.inference.retrieval.retriever_factory import build_retriever_for_experiment
 
 
 def _style_profile_from_config(config: dict) -> str:

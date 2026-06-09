@@ -8,7 +8,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from vision_rag_cxr.experiments.rag_ablation_experiment import RAGAblationExperiment
+from vision_rag_cxr.inference.experiments.rag_ablation_experiment import RAGAblationExperiment
 from vision_rag_cxr.utils.io import load_yaml
 
 

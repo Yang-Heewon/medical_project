@@ -1,4 +1,4 @@
-from vision_rag_cxr.data.labeler_chexbert import CheXbertLikeLabeler
+from vision_rag_cxr.datasets.labeler_chexbert import CheXbertLikeLabeler
 
 
 def test_keyword_labeler_detects_pneumothorax():

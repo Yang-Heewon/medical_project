@@ -1,0 +1,23 @@
+# 실제 IU sweep: {seed × encoder × generator × rag_mode × task}
+out_dir: outputs/sweep_real_iu
+data_csv: /root/data/real_iu/real_iu_paired.csv
+label_space: chexbert_14
+support_ratio: 0.7
+seeds: [0]
+top_k: 5
+max_inference_samples: null    # 전체 inference split 사용 (~1016). 3-GPU 샤딩으로 병렬.
+
+encoders:
+  - {vision_encoder_name: medclip, benchmark_tag: biomedclip,
+     model_name_or_path: "hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224",
+     device: cuda, batch_size: 16, embedding_dim: 512}
+
+generators:
+  - {model_name: qwen2.5-vl, model_name_or_path: "Qwen/Qwen2.5-VL-7B-Instruct",
+     backend: transformers, device_map: auto, dtype: float16, max_new_tokens: 256, temperature: 0.0,
+     max_image_size: 896}   # V100(sm_70)은 bf16 네이티브 미지원 -> fp16이 더 빠름
+  # LLaVA-Med(microsoft/llava-med-v1.5-mistral-7b)는 model_type 'llava_mistral'이라
+  # 표준 transformers(AutoModelForImageTextToText)로 로드 불가 -> 별도 LLaVA repo 코드 필요. 일단 제외.
+
+rag_modes: [image_only, unrelated, related]
+tasks: [impression, localization]

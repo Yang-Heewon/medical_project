@@ -8,18 +8,19 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from vision_rag_cxr.rag.related_retriever import _label_jaccard_scores, _read_metadata
-from vision_rag_cxr.data.labeler_chexbert import CHEXBERT_LABELS
+from vision_rag_cxr.inference.retrieval.related_retriever import _label_jaccard_scores, _read_metadata, _resolve_retriever_labels
+from vision_rag_cxr.datasets.labeler_chexbert import CHEXBERT_LABELS
 
 
-def _parse_query_labels(query_sample: dict) -> np.ndarray | None:
+def _parse_query_labels(query_sample: dict, labels: list[str] | None = None) -> np.ndarray | None:
     import json
 
+    labels = labels or CHEXBERT_LABELS
     value = query_sample.get("chexbert_labels_binary")
     if value is None:
         return None
     parsed = json.loads(value) if isinstance(value, str) else value
-    return np.asarray([int(parsed.get(label, 0)) for label in CHEXBERT_LABELS], dtype="float32")
+    return np.asarray([int(parsed.get(label, 0)) for label in labels], dtype="float32")
 
 
 class UnrelatedRetriever:
@@ -32,6 +33,7 @@ class UnrelatedRetriever:
     def __init__(self, metadata: pd.DataFrame, config: dict, label_vectors: np.ndarray | None = None):
         self.metadata = metadata.reset_index(drop=True)
         self.config = config
+        self.labels = _resolve_retriever_labels(config)
         self.label_vectors = label_vectors
 
     @classmethod
@@ -52,7 +54,7 @@ class UnrelatedRetriever:
         candidate_indices = np.flatnonzero(mask)
         source = str(self.config.get("query_label_source", "none")).lower()
         if self.label_vectors is not None and source in {"gt", "gt_chexbert", "chexbert_labels_binary"}:
-            query_labels = _parse_query_labels(query_sample)
+            query_labels = _parse_query_labels(query_sample, self.labels)
             if query_labels is not None:
                 label_scores = _label_jaccard_scores(self.label_vectors, query_labels)
                 max_j = float(self.config.get("max_label_jaccard_for_unrelated", 0.05))

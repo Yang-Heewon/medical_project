@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from vision_rag_cxr.rag.related_retriever import RelatedRetriever
-from vision_rag_cxr.rag.unrelated_retriever import UnrelatedRetriever
+from vision_rag_cxr.inference.retrieval.related_retriever import RelatedRetriever
+from vision_rag_cxr.inference.retrieval.unrelated_retriever import UnrelatedRetriever
 from vision_rag_cxr.utils.io import load_yaml
 
 

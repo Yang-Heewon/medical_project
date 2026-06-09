@@ -13,8 +13,17 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from vision_rag_cxr.data.labeler_chexbert import CHEXBERT_LABELS
-from vision_rag_cxr.models.vision_encoder_base import build_vision_encoder
+from vision_rag_cxr.datasets.labeler_chexbert import CHEXBERT_LABELS
+from vision_rag_cxr.datasets.label_spaces import read_label_space_sidecar, resolve_labels
+from vision_rag_cxr.models.encoders.base import build_vision_encoder
+
+
+def _resolve_retriever_labels(config: dict) -> list[str]:
+    """retriever가 쓸 label space를 정한다. DB sidecar가 있으면 그걸 우선한다."""
+    meta_path = config.get("support_metadata_path")
+    if meta_path:
+        return read_label_space_sidecar(meta_path, default=config.get("label_space", "chexbert_14"))
+    return resolve_labels(config)
 
 
 def _read_metadata(path: str | Path) -> pd.DataFrame:
@@ -34,18 +43,20 @@ def _read_metadata(path: str | Path) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
-def _label_dict(value) -> dict[str, int]:
+def _label_dict(value, labels: list[str] | None = None) -> dict[str, int]:
+    labels = labels or CHEXBERT_LABELS
     if isinstance(value, dict):
-        return {label: int(value.get(label, 0)) for label in CHEXBERT_LABELS}
+        return {label: int(value.get(label, 0)) for label in labels}
     if value is None or (isinstance(value, float) and np.isnan(value)):
-        return {label: 0 for label in CHEXBERT_LABELS}
+        return {label: 0 for label in labels}
     parsed = json.loads(value)
-    return {label: int(parsed.get(label, 0)) for label in CHEXBERT_LABELS}
+    return {label: int(parsed.get(label, 0)) for label in labels}
 
 
-def _label_matrix_from_metadata(metadata: pd.DataFrame) -> np.ndarray:
+def _label_matrix_from_metadata(metadata: pd.DataFrame, labels: list[str] | None = None) -> np.ndarray:
+    labels = labels or CHEXBERT_LABELS
     return np.asarray(
-        [[_label_dict(x).get(label, 0) for label in CHEXBERT_LABELS] for x in metadata["chexbert_labels_binary"]],
+        [[_label_dict(x, labels).get(label, 0) for label in labels] for x in metadata["chexbert_labels_binary"]],
         dtype="float32",
     )
 
@@ -79,9 +90,10 @@ class RelatedRetriever:
     ):
         self.metadata = metadata.reset_index(drop=True)
         self.config = config
+        self.labels = _resolve_retriever_labels(config)
         self.image_embeddings = np.asarray(image_embeddings, dtype="float32")
         self.text_embeddings = None if text_embeddings is None else np.asarray(text_embeddings, dtype="float32")
-        self.label_vectors = label_vectors if label_vectors is not None else _label_matrix_from_metadata(self.metadata)
+        self.label_vectors = label_vectors if label_vectors is not None else _label_matrix_from_metadata(self.metadata, self.labels)
         self.encoder = build_vision_encoder(config)
 
     @classmethod
@@ -103,11 +115,11 @@ class RelatedRetriever:
         if source in {"none", "", "image_only"}:
             return None
         if source in {"gt", "gt_chexbert", "chexbert_labels_binary"}:
-            labels = _label_dict(query_sample.get("chexbert_labels_binary"))
-            return np.asarray([labels[label] for label in CHEXBERT_LABELS], dtype="float32")
+            labels = _label_dict(query_sample.get("chexbert_labels_binary"), self.labels)
+            return np.asarray([labels[label] for label in self.labels], dtype="float32")
         if source in query_sample:
-            labels = _label_dict(query_sample.get(source))
-            return np.asarray([labels[label] for label in CHEXBERT_LABELS], dtype="float32")
+            labels = _label_dict(query_sample.get(source), self.labels)
+            return np.asarray([labels[label] for label in self.labels], dtype="float32")
         return None
 
     def _query_text_embedding(self, query_sample: dict) -> np.ndarray | None:

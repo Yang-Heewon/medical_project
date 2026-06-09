@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import numpy as np
 
-from vision_rag_cxr.data.labeler_chexbert import CHEXBERT_LABELS
+from vision_rag_cxr.datasets.labeler_chexbert import CHEXBERT_LABELS
 
 
 def cosine(a: np.ndarray, b: np.ndarray) -> float:

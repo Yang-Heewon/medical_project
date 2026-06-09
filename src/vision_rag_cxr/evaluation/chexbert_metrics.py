@@ -7,14 +7,15 @@ import json
 import numpy as np
 from sklearn.metrics import f1_score, precision_score, recall_score
 
-from vision_rag_cxr.data.labeler_chexbert import CHEXBERT_LABELS
+from vision_rag_cxr.datasets.labeler_chexbert import CHEXBERT_LABELS
 
 
-def labels_json_to_matrix(values: list[str]) -> np.ndarray:
+def labels_json_to_matrix(values: list[str], labels: list[str] | None = None) -> np.ndarray:
+    labels = labels or CHEXBERT_LABELS
     rows = []
     for x in values:
         d = json.loads(x) if isinstance(x, str) else x
-        rows.append([int(d.get(label, 0)) for label in CHEXBERT_LABELS])
+        rows.append([int(d.get(label, 0)) for label in labels])
     return np.asarray(rows, dtype=int)
 
 

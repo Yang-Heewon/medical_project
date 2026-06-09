@@ -1,0 +1,9 @@
+model_role: generator
+model_name: qwen2.5-vl
+model_name_or_path: Qwen/Qwen2.5-VL-7B-Instruct
+backend: placeholder      # 실제 생성: transformers
+device: cuda
+dtype: bfloat16
+max_new_tokens: 512
+temperature: 0.0
+top_p: 1.0

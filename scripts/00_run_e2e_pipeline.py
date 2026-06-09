@@ -27,14 +27,14 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 import pandas as pd
 
-from vision_rag_cxr.data.indiana_preprocessor import preprocess_indiana
-from vision_rag_cxr.data.splitters import create_splits
-from vision_rag_cxr.experiments.final_rag_experiment import FinalRAGExperiment
-from vision_rag_cxr.experiments.impression_experiment import ImpressionExperiment
-from vision_rag_cxr.experiments.localization_experiment import LocalizationExperiment
-from vision_rag_cxr.experiments.prompt_optimization_experiment import run_prompt_optimization
-from vision_rag_cxr.experiments.rag_ablation_experiment import RAGAblationExperiment
-from vision_rag_cxr.rag.build_database import build_support_database
+from vision_rag_cxr.datasets.registry import preprocess_dataset
+from vision_rag_cxr.datasets.splitters import create_splits
+from vision_rag_cxr.inference.experiments.final_rag_experiment import FinalRAGExperiment
+from vision_rag_cxr.inference.experiments.impression_experiment import ImpressionExperiment
+from vision_rag_cxr.inference.experiments.localization_experiment import LocalizationExperiment
+from vision_rag_cxr.inference.experiments.prompt_optimization_experiment import run_prompt_optimization
+from vision_rag_cxr.inference.experiments.rag_ablation_experiment import RAGAblationExperiment
+from vision_rag_cxr.inference.retrieval.build_database import build_support_database
 from vision_rag_cxr.utils.io import ensure_dir, load_yaml
 
 
@@ -193,6 +193,11 @@ def run_pipeline(config_path: str | Path) -> dict[str, str]:
     _stage(f"Pipeline start: {pipe.get('pipeline_name', config_path)}")
     print(f"work_dir: {work_dir}", flush=True)
 
+    # label space는 데이터셋 config가 정한다. split/RAG DB가 같은 space를 쓰도록 전파한다.
+    _data_cfg_top = _load(pipe["configs"]["data"]) if pipe["configs"].get("data") else {}
+    label_space = pipe.get("label_space") or _data_cfg_top.get("label_space", "chexbert_14")
+    print(f"label_space: {label_space}", flush=True)
+
     data_csv_override = pipe.get("data_csv_override") or pipe.get("input_data_csv")
     data_csv = Path(data_csv_override) if data_csv_override else pre_dir / "indiana_paired_samples.csv"
     if data_csv_override:
@@ -201,10 +206,10 @@ def run_pipeline(config_path: str | Path) -> dict[str, str]:
             raise FileNotFoundError(f"data_csv_override not found: {data_csv}")
         print(f"data_csv_override: {data_csv}", flush=True)
     elif run_flags.get("preprocess", True):
-        _stage("1/7 preprocess Indiana paired samples")
+        _stage("1/7 preprocess paired samples")
         data_cfg = _load(pipe["configs"]["data"])
         data_cfg["output_dir"] = str(pre_dir)
-        preprocess_indiana(data_cfg)
+        preprocess_dataset(data_cfg)
 
     split_csv = split_dir / f"split_seed_{int(pipe.get('seed', 0))}.csv"
     if run_flags.get("split", True):
@@ -212,12 +217,14 @@ def run_pipeline(config_path: str | Path) -> dict[str, str]:
         split_cfg = _load(pipe["configs"]["split"])
         split_cfg["output_dir"] = str(split_dir)
         split_cfg["seeds"] = pipe.get("seeds", [pipe.get("seed", 0)])
+        split_cfg["label_space"] = label_space
         create_splits(str(data_csv), split_cfg)
 
     if run_flags.get("build_rag_db", True):
         _stage("3/7 build support RAG database")
         retrieval_cfg = _load(pipe["configs"]["retrieval"])
         retrieval_cfg["output_dir"] = str(rag_dir)
+        retrieval_cfg["label_space"] = label_space
         if pipe.get("max_support_samples") is not None:
             retrieval_cfg["max_support_samples"] = int(pipe["max_support_samples"])
         build_support_database(str(split_csv), retrieval_cfg)

@@ -7,8 +7,8 @@
 
 from __future__ import annotations
 
-from vision_rag_cxr.experiments.impression_experiment import ImpressionExperiment
-from vision_rag_cxr.experiments.localization_experiment import LocalizationExperiment
+from vision_rag_cxr.inference.experiments.impression_experiment import ImpressionExperiment
+from vision_rag_cxr.inference.experiments.localization_experiment import LocalizationExperiment
 
 
 class RAGAblationExperiment:

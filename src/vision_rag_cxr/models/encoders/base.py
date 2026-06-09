@@ -41,15 +41,15 @@ def build_vision_encoder(config: dict) -> BaseVisionEncoder:
     if name == "dummy_hash":
         return DummyHashEncoder(config)
     if name == "medsiglip":
-        from vision_rag_cxr.models.medsiglip_encoder import MedSigLIPEncoder
+        from vision_rag_cxr.models.encoders.medsiglip import MedSigLIPEncoder
         return MedSigLIPEncoder(config)
     if name == "medclip":
-        from vision_rag_cxr.models.medclip_encoder import MedCLIPEncoder
+        from vision_rag_cxr.models.encoders.medclip import MedCLIPEncoder
         return MedCLIPEncoder(config)
     if name == "biovil":
-        from vision_rag_cxr.models.biovil_encoder import BioViLEncoder
+        from vision_rag_cxr.models.encoders.biovil import BioViLEncoder
         return BioViLEncoder(config)
     if name == "chexzero":
-        from vision_rag_cxr.models.chexzero_encoder import CheXzeroEncoder
+        from vision_rag_cxr.models.encoders.chexzero import CheXzeroEncoder
         return CheXzeroEncoder(config)
     raise ValueError(f"지원하지 않는 vision encoder입니다: {name}")

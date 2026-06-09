@@ -1,0 +1,9 @@
+model_role: generator
+model_name: llava-med
+model_name_or_path: microsoft/llava-med-v1.5-mistral-7b
+backend: placeholder      # 실제 생성: transformers (trust_remote_code 필요할 수 있음)
+device: cuda
+dtype: bfloat16
+max_new_tokens: 512
+temperature: 0.0
+top_p: 1.0

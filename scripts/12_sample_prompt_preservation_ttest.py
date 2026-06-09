@@ -32,8 +32,8 @@ from PIL import Image
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from vision_rag_cxr.data.labeler_chexbert import CHEXBERT_LABELS
-from vision_rag_cxr.models.medgemma_generator import MedGemmaGenerator
+from vision_rag_cxr.datasets.labeler_chexbert import CHEXBERT_LABELS
+from vision_rag_cxr.models.generators.medgemma import MedGemmaGenerator
 from vision_rag_cxr.prompting.parser import parse_json_output
 from vision_rag_cxr.prompting.textgrad_optimizer import evaluate_lesion_preservation_ttest
 from vision_rag_cxr.utils.io import ensure_dir, load_yaml

@@ -8,8 +8,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from vision_rag_cxr.experiments.impression_experiment import ImpressionExperiment
-from vision_rag_cxr.experiments.localization_experiment import LocalizationExperiment
+from vision_rag_cxr.inference.experiments.impression_experiment import ImpressionExperiment
+from vision_rag_cxr.inference.experiments.localization_experiment import LocalizationExperiment
 from vision_rag_cxr.utils.io import load_yaml
 
 

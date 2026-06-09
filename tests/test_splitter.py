@@ -1,7 +1,7 @@
 import json
 import pandas as pd
 
-from vision_rag_cxr.data.splitters import multilabel_split
+from vision_rag_cxr.datasets.splitters import multilabel_split
 
 
 def test_splitter_runs():
