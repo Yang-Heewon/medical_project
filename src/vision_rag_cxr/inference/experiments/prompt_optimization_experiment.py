@@ -87,27 +87,42 @@ def _set_jaccard(a: dict[str, int], b: dict[str, int]) -> float:
     return len(pa & pb) / union if union else 1.0
 
 
-def _generate_dev(generator, dev_rows: list[dict], style_profile: str, labeler: CheXbertLikeLabeler) -> list[dict]:
-    """dev set 각 sample에 대해 impression 생성 + 예측 label + 병변 점수를 계산한다."""
+def _gen_one(generator, row: dict, prompt: str, labeler: CheXbertLikeLabeler) -> dict:
+    raw = generator.generate_impression(row, prompt, context_examples=None)
+    pred = _pred_binary_from_raw(raw, labeler)
+    gt = _gt_binary(row)
+    parsed, _ = parse_json_output(raw)
+    pred_text = str(parsed.get("impression", "")) if isinstance(parsed, dict) else str(raw or "")
+    return {
+        "uid": row.get("uid"),
+        "raw": raw,
+        "pred": pred,
+        "gt": gt,
+        "lesion_score": _set_f1(pred, gt),         # 병변 정확도(제약용)
+        "pred_text": pred_text,                     # 생성 impression 텍스트(목표용)
+        "gt_text": str(row.get("impression", "") or ""),
+    }
+
+
+def _generate_dev(generators, dev_rows: list[dict], style_profile: str, labeler: CheXbertLikeLabeler) -> list[dict]:
+    """dev set impression 생성. generators가 여러 개면 GPU별 데이터-병렬(연속 chunk)로 동시 생성."""
     prompt = IMPRESSION_PROMPT.format(style_profile=style_profile, context_examples="")
-    out = []
-    for row in dev_rows:
-        raw = generator.generate_impression(row, prompt, context_examples=None)
-        pred = _pred_binary_from_raw(raw, labeler)
-        gt = _gt_binary(row)
-        parsed, _ = parse_json_output(raw)
-        pred_text = str(parsed.get("impression", "")) if isinstance(parsed, dict) else str(raw or "")
-        out.append(
-            {
-                "uid": row.get("uid"),
-                "raw": raw,
-                "pred": pred,
-                "gt": gt,
-                "lesion_score": _set_f1(pred, gt),         # 병변 정확도(제약용)
-                "pred_text": pred_text,                     # 생성 impression 텍스트(목표용)
-                "gt_text": str(row.get("impression", "") or ""),
-            }
-        )
+    gens = generators if isinstance(generators, list) else [generators]
+    if len(gens) == 1:
+        return [_gen_one(gens[0], r, prompt, labeler) for r in dev_rows]
+    import math
+    from concurrent.futures import ThreadPoolExecutor
+
+    n = len(gens)
+    size = math.ceil(len(dev_rows) / n)
+    chunks = [dev_rows[i * size : (i + 1) * size] for i in range(n)]
+    def _run(gi):
+        return [_gen_one(gens[gi], r, prompt, labeler) for r in chunks[gi]]
+    with ThreadPoolExecutor(max_workers=n) as ex:
+        parts = list(ex.map(_run, range(n)))  # 순서 보존(연속 chunk)
+    out: list[dict] = []
+    for p in parts:
+        out.extend(p)
     return out
 
 
@@ -163,12 +178,70 @@ def _aggregate_metrics(results: list[dict], baseline_results: list[dict] | None 
     return out
 
 
-def _load_generator_critic(config: dict):
+def _load_generators_critic(config: dict):
+    """generator(들) + critic 로드. config['generator_devices']가 있으면 GPU별 replica를 만든다."""
     gen_cfg = config.get("generator_config")
     gen_cfg = load_yaml(gen_cfg) if isinstance(gen_cfg, str) else (gen_cfg or {})
     crit_cfg = config.get("critic_config")
     crit_cfg = load_yaml(crit_cfg) if isinstance(crit_cfg, str) else (crit_cfg or {})
-    return build_generator(gen_cfg), build_critic(crit_cfg)
+
+    gdevs = config.get("generator_devices")  # 예: ["cuda:0","cuda:1"] (visible 기준)
+    if gdevs:
+        generators = []
+        for d in gdevs:
+            gc = dict(gen_cfg); gc["device"] = "cuda"; gc["device_map"] = d
+            generators.append(build_generator(gc))
+    else:
+        generators = [build_generator(gen_cfg)]
+    return generators, build_critic(crit_cfg)
+
+
+def _trace_init(path: Path, config: dict, init_style: str, n_dev: int, n_gen: int) -> None:
+    gate = config.get("lesion_preservation_gate", {}) or {}
+    lines = [
+        "# TextGrad 진행 기록 (prompt optimization trace)",
+        "",
+        "VLM은 frozen — 프롬프트(STYLE_PROFILE)만 바꿔 impression 텍스트를 개선하되, 병변 검출은 baseline과 동일 유지.",
+        "",
+        f"- **objective**: `{config.get('objective_metric','impression_style_score')}` (impression 텍스트 스타일: BERTScore/ROUGE vs GT impression)",
+        f"- **constraint(병변)**: lesion-preservation gate `mode={gate.get('mode','noninferiority')}` margin={gate.get('margin',0.03)} alpha={gate.get('alpha',0.05)} + collapse/hallucination 증가 금지",
+        f"- dev_samples: {n_dev} | generator GPU replica: {n_gen} | max_epochs: {config.get('max_epochs')} | patience: {config.get('early_stop_patience')}",
+        "",
+        "## epoch 0 — baseline STYLE_PROFILE",
+        "```text",
+        init_style.strip(),
+        "```",
+        "",
+    ]
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _trace_epoch(path: Path, epoch: int, adopt: bool, cand_metrics: dict, best_metrics: dict,
+                 gate: dict, critiques: list[str], candidate_style: str, objective_metric: str) -> None:
+    verdict = "✅ ACCEPTED" if adopt else "❌ REJECTED"
+    blk = [
+        f"## epoch {epoch} — {verdict}",
+        f"- {objective_metric}: **{round(cand_metrics.get('impression_style_score',0.0),4)}** "
+        f"(best {round(best_metrics.get('impression_style_score',0.0),4)}) | "
+        f"BERTScore={cand_metrics.get('impression_bertscore')} ROUGE-L={cand_metrics.get('impression_rougeL')}",
+        f"- clinical_f1={round(cand_metrics.get('clinical_f1',0.0),4)} | normal_collapse={round(cand_metrics.get('normal_collapse_rate',0.0),4)} | hallucination={round(cand_metrics.get('hallucination_rate',0.0),4)}",
+        f"- 병변 게이트: pass={gate.get('lesion_preservation_pass')} reason={gate.get('reason')} "
+        f"mean_delta={gate.get('mean_delta_candidate_minus_baseline')} (mode={gate.get('mode')})",
+        "",
+        "### critic 피드백 (현재 best 대비, 일부)",
+    ]
+    for c in critiques[:3]:
+        blk.append(f"- {str(c).strip()[:400]}")
+    blk += [
+        "",
+        "### critic이 제안한 candidate STYLE_PROFILE",
+        "```text",
+        str(candidate_style).strip(),
+        "```",
+        "",
+    ]
+    with open(path, "a", encoding="utf-8") as f:
+        f.write("\n".join(blk) + "\n")
 
 
 def run_prompt_optimization(config: dict) -> dict:
@@ -200,13 +273,21 @@ def run_prompt_optimization(config: dict) -> dict:
         dev = df.head(dev_size)
     dev_rows = [r.to_dict() for _, r in dev.iterrows()]
 
-    generator, critic = _load_generator_critic(config)
+    generators, critic = _load_generators_critic(config)
     labeler = CheXbertLikeLabeler()
+    trace_path = Path(out_dir) / "textgrad_trace.md"   # 프롬프트/critic 진행 상세 기록
+    _trace_init(trace_path, config, init_style, len(dev_rows), len(generators))
 
     # baseline
-    baseline_results = _generate_dev(generator, dev_rows, init_style, labeler)
+    baseline_results = _generate_dev(generators, dev_rows, init_style, labeler)
     baseline_metrics = _aggregate_metrics(baseline_results, baseline_results)
     baseline_lesion = [r["lesion_score"] for r in baseline_results]
+    _trace_append = lambda t: open(trace_path, "a", encoding="utf-8").write(t + "\n")
+    _trace_append(
+        f"- baseline: impression_style_score={round(baseline_metrics.get('impression_style_score',0.0),4)} "
+        f"(BERTScore={baseline_metrics.get('impression_bertscore')}, ROUGE-L={baseline_metrics.get('impression_rougeL')}), "
+        f"clinical_f1={round(baseline_metrics['clinical_f1'],4)}, normal_collapse={round(baseline_metrics['normal_collapse_rate'],4)}\n"
+    )
 
     best_style = init_style
     best_metrics = baseline_metrics
@@ -250,7 +331,7 @@ def run_prompt_optimization(config: dict) -> dict:
         candidate_style = critic.rewrite_style_profile(current_style, critiques, best_metrics)
 
         # 3. candidate로 재생성 + metric
-        cand_results = _generate_dev(generator, dev_rows, candidate_style, labeler)
+        cand_results = _generate_dev(generators, dev_rows, candidate_style, labeler)
         cand_metrics = _aggregate_metrics(cand_results, baseline_results)
         cand_lesion = [r["lesion_score"] for r in cand_results]
 
@@ -293,6 +374,7 @@ def run_prompt_optimization(config: dict) -> dict:
         )
         pd.DataFrame(history).to_csv(hist_path, index=False)  # epoch별 진행 즉시 저장(모니터링용)
         save_style_profile(best_style, Path(out_dir) / "optimized_style_profile.txt")
+        _trace_epoch(trace_path, epoch, adopt, cand_metrics, best_metrics, gate, critiques, candidate_style, objective_metric)
 
         # early stopping: patience epoch 동안 개선 없으면 종료
         if no_improve >= patience:
@@ -310,7 +392,7 @@ def run_prompt_optimization(config: dict) -> dict:
         "",
         f"- dev_samples: {len(dev_rows)}",
         f"- max_epochs: {max_epochs}",
-        f"- generator_backend: {getattr(generator, 'backend', 'unknown')}",
+        f"- generator_backend: {getattr(generators[0], 'backend', 'unknown')}",
         f"- critic_backend: {getattr(critic, 'backend', 'unknown')}",
         f"- baseline_clinical_f1: {round(baseline_metrics['clinical_f1'], 4)}",
         f"- best_clinical_f1: {round(best_metrics['clinical_f1'], 4)}",
