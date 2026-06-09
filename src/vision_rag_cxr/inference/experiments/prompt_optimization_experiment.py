@@ -24,6 +24,7 @@ import pandas as pd
 
 from vision_rag_cxr.datasets.labeler_chexbert import CHEXBERT_LABELS, CheXbertLikeLabeler, labels_to_binary_vector
 from vision_rag_cxr.evaluation.chexbert_metrics import multilabel_scores
+from vision_rag_cxr.evaluation.report_metrics import compute_text_similarity_metrics
 from vision_rag_cxr.models.critics.qwen import build_critic
 from vision_rag_cxr.models.generators.factory import build_generator
 from vision_rag_cxr.prompting.parser import parse_json_output
@@ -94,13 +95,17 @@ def _generate_dev(generator, dev_rows: list[dict], style_profile: str, labeler: 
         raw = generator.generate_impression(row, prompt, context_examples=None)
         pred = _pred_binary_from_raw(raw, labeler)
         gt = _gt_binary(row)
+        parsed, _ = parse_json_output(raw)
+        pred_text = str(parsed.get("impression", "")) if isinstance(parsed, dict) else str(raw or "")
         out.append(
             {
                 "uid": row.get("uid"),
                 "raw": raw,
                 "pred": pred,
                 "gt": gt,
-                "lesion_score": _set_f1(pred, gt),
+                "lesion_score": _set_f1(pred, gt),         # 병변 정확도(제약용)
+                "pred_text": pred_text,                     # 생성 impression 텍스트(목표용)
+                "gt_text": str(row.get("impression", "") or ""),
             }
         )
     return out
@@ -127,7 +132,22 @@ def _aggregate_metrics(results: list[dict], baseline_results: list[dict] | None 
         if missed:
             omission += 1
     n = max(1, len(results))
+    # 텍스트(impression 스타일) 목표: 생성 impression vs 데이터셋 GT impression 유사도
+    text_sim = {}
+    if results and "pred_text" in results[0]:
+        text_sim = compute_text_similarity_metrics(
+            [r.get("pred_text", "") for r in results],
+            [r.get("gt_text", "") for r in results],
+        )
+    # impression_style_score = BERTScore 우선, 없으면 ROUGE-L (최적화 objective)
+    style_score = text_sim.get("bertscore_f1")
+    if style_score is None:
+        style_score = text_sim.get("rougeL_f")
+
     out = {
+        "impression_style_score": float(style_score) if style_score is not None else 0.0,
+        "impression_bertscore": text_sim.get("bertscore_f1"),
+        "impression_rougeL": text_sim.get("rougeL_f"),
         "clinical_f1": metrics["chexbert_micro_f1"],
         "chexbert_macro_f1": metrics["chexbert_macro_f1"],
         "chexbert_micro_precision": metrics["chexbert_micro_precision"],
@@ -195,6 +215,7 @@ def run_prompt_optimization(config: dict) -> dict:
         {
             "epoch": 0,
             "stage": "baseline",
+            "impression_style_score": round(baseline_metrics.get("impression_style_score", 0.0), 4),
             "clinical_f1": round(baseline_metrics["clinical_f1"], 4),
             "normal_collapse_rate": round(baseline_metrics["normal_collapse_rate"], 4),
             "accepted": True,
@@ -203,6 +224,8 @@ def run_prompt_optimization(config: dict) -> dict:
 
     current_style = init_style
     current_results = baseline_results       # 현재 best의 per-sample 결과 (반복 탐색의 기준)
+    # 최적화 목표: 기본은 impression 텍스트 스타일 점수(BERTScore/ROUGE). 병변정확도는 제약(게이트).
+    objective_metric = config.get("objective_metric", "impression_style_score")
     patience = int(config.get("early_stop_patience", 10))
     no_improve = 0
     hist_path = Path(out_dir) / "prompt_optimization_history.csv"
@@ -242,7 +265,8 @@ def run_prompt_optimization(config: dict) -> dict:
         cand_metrics["lesion_preservation_gate"] = gate
 
         accepted = accept_optimized_prompt(baseline_metrics, cand_metrics, accept_rule)
-        improved = cand_metrics["clinical_f1"] >= best_metrics["clinical_f1"]
+        # 채택 = 병변 정확도 제약(게이트/규칙) 통과 AND impression 스타일 목표가 개선
+        improved = cand_metrics.get(objective_metric, 0.0) >= best_metrics.get(objective_metric, 0.0) - 1e-9
         adopt = accepted and improved
         if adopt:
             best_style = candidate_style
@@ -258,8 +282,9 @@ def run_prompt_optimization(config: dict) -> dict:
             {
                 "epoch": epoch,
                 "stage": "candidate",
+                "impression_style_score": round(cand_metrics.get("impression_style_score", 0.0), 4),
+                "best_style_score": round(best_metrics.get("impression_style_score", 0.0), 4),
                 "clinical_f1": round(cand_metrics["clinical_f1"], 4),
-                "best_clinical_f1": round(best_metrics["clinical_f1"], 4),
                 "normal_collapse_rate": round(cand_metrics["normal_collapse_rate"], 4),
                 "lesion_gate_pass": bool(gate.get("lesion_preservation_pass")),
                 "accepted": bool(adopt),

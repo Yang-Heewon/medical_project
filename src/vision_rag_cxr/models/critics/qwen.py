@@ -125,14 +125,22 @@ class QwenCritic(BaseCritic):
                     base += "\n" + line
             return base + "\n"
 
-        system = "You optimize a STYLE_PROFILE prompt fragment for a chest X-ray report generator. You never change the model, only the prompt text."
+        system = (
+            "You optimize a STYLE_PROFILE prompt fragment for a radiology report generator. "
+            "The vision model is FROZEN — you change only the prompt text, never the model. "
+            "Goal: make the generated IMPRESSION text better (clearer, more complete, matching the "
+            "dataset's reporting style) WITHOUT changing the model's lesion-detection behavior — the set "
+            "of findings it reports must stay statistically equivalent to the baseline (don't push it to "
+            "report more or fewer abnormalities)."
+        )
         joined = "\n- ".join(critiques[:20])
         user = (
             f"Current STYLE_PROFILE:\n{current_style_profile}\n\n"
             f"Aggregated metric summary: {metric_summary}\n\n"
             f"Critic feedback:\n- {joined}\n\n"
-            "Rewrite an improved STYLE_PROFILE that reduces missed findings, hallucinations, and normal collapse "
-            "while keeping impressions concise and faithful. Output ONLY the new STYLE_PROFILE text."
+            "Rewrite an improved STYLE_PROFILE that improves impression wording/structure/completeness and "
+            "dataset style, while keeping lesion detection unchanged (no increase in missed findings, "
+            "hallucinations, or normal collapse vs baseline). Output ONLY the new STYLE_PROFILE text."
         )
         return self._chat(system, user)
 
