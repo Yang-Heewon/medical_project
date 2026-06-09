@@ -49,39 +49,49 @@ class HFVLMGenerator(BaseGenerator):
         import torch
         from transformers import AutoModelForImageTextToText, AutoProcessor
 
+        from vision_rag_cxr.utils.devices import resolve_device, resolve_dtype
+
         self.torch = torch
-        self.torch_dtype = getattr(torch, str(self.config.get("dtype", "bfloat16")), torch.bfloat16)
+        self.device = resolve_device(self.config.get("device", "auto"))
+        self.torch_dtype = resolve_dtype(self.device, self.config.get("dtype"))
         local_files_only = bool(self.config.get("local_files_only", False))
         trust = bool(self.config.get("trust_remote_code", False))
 
         self.processor = AutoProcessor.from_pretrained(
             self.model_name_or_path, local_files_only=local_files_only, trust_remote_code=trust
         )
-        model_kwargs: dict[str, Any] = {"local_files_only": local_files_only, "trust_remote_code": trust}
-        if self.config.get("device_map", "auto"):
-            model_kwargs["device_map"] = self.config.get("device_map", "auto")
-
-        max_memory = self.config.get("max_memory")
-        if isinstance(max_memory, dict) and max_memory:
-            model_kwargs["max_memory"] = {int(k) if str(k).isdigit() else k: v for k, v in max_memory.items()}
-
-        quantization = str(self.config.get("quantization", "") or "").lower()
-        if bool(self.config.get("load_in_4bit", False)) or quantization in {"4bit", "bnb_4bit"}:
-            from transformers import BitsAndBytesConfig
-
-            model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=self.torch_dtype,
-                bnb_4bit_quant_type=str(self.config.get("bnb_4bit_quant_type", "nf4")),
-            )
-        else:
-            model_kwargs["torch_dtype"] = self.torch_dtype
-
+        model_kwargs: dict[str, Any] = {
+            "local_files_only": local_files_only, "trust_remote_code": trust, "torch_dtype": self.torch_dtype,
+        }
         attn_impl = self.config.get("attn_implementation")
         if attn_impl:
             model_kwargs["attn_implementation"] = attn_impl
 
-        self.model = AutoModelForImageTextToText.from_pretrained(self.model_name_or_path, **model_kwargs)
+        quantization = str(self.config.get("quantization", "") or "").lower()
+        want_4bit = bool(self.config.get("load_in_4bit", False)) or quantization in {"4bit", "bnb_4bit"}
+
+        if self.device == "cuda":
+            # CUDA: accelerate device_map + (선택) bitsandbytes 4bit
+            if self.config.get("device_map", "auto"):
+                model_kwargs["device_map"] = self.config.get("device_map", "auto")
+            max_memory = self.config.get("max_memory")
+            if isinstance(max_memory, dict) and max_memory:
+                model_kwargs["max_memory"] = {int(k) if str(k).isdigit() else k: v for k, v in max_memory.items()}
+            if want_4bit:
+                from transformers import BitsAndBytesConfig
+                model_kwargs.pop("torch_dtype", None)
+                model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                    load_in_4bit=True, bnb_4bit_compute_dtype=self.torch_dtype,
+                    bnb_4bit_quant_type=str(self.config.get("bnb_4bit_quant_type", "nf4")),
+                )
+            self.model = AutoModelForImageTextToText.from_pretrained(self.model_name_or_path, **model_kwargs)
+        else:
+            # MPS(Apple)/CPU: device_map·bitsandbytes 미사용, 로드 후 .to(device)
+            if want_4bit:
+                print(f"[hf_vlm] {self.device}에서는 4bit(bitsandbytes) 불가 -> fp 풀로드로 진행", flush=True)
+            self.model = AutoModelForImageTextToText.from_pretrained(self.model_name_or_path, **model_kwargs)
+            self.model = self.model.to(self.device)
+
         self.model.eval()
         self._loaded = True
 

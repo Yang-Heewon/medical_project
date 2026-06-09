@@ -43,11 +43,12 @@ class MedCLIPEncoder(BaseVisionEncoder):
         if self._loaded:
             return
 
-        import torch
         import open_clip
 
-        if self.device == "cuda" and not torch.cuda.is_available():
-            self.device = "cpu"
+        from vision_rag_cxr.utils.devices import resolve_device
+
+        # cuda 없으면 mps(Apple)→cpu 자동 폴백
+        self.device = resolve_device(self.device)
 
         self.model, self.preprocess = open_clip.create_model_from_pretrained(self.model_name_or_path)
         self.tokenizer = open_clip.get_tokenizer(self.model_name_or_path)

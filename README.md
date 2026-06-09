@@ -83,6 +83,8 @@ src/vision_rag_cxr/
 
 ## 환경 노트
 - V100(sm_70): `torch==2.6.0+cu124`(fp16), `transformers<5` 고정. 최신 cu128/cu130 휠과 transformers 5.x는 각각 Volta/BiomedCLIP·Qwen 로딩과 비호환.
+- **Apple Silicon(맥북)**: `--device auto`(또는 `mps`)로 내부 GPU 사용. cuda 없으면 mps→cpu 자동 폴백, bitsandbytes(4bit)는 비활성(맥 미지원). Qwen2.5-VL-7B fp16은 통합메모리 ≥32GB 권장. 일부 비전 연산 MPS 미지원 시 `PYTORCH_ENABLE_MPS_FALLBACK=1`로 CPU 폴백. 예: `vrag infer --dataset-csv <csv> --generators qwen2.5-vl --encoder biomedclip --modes no_rag,related --device auto --gpus 0`
+- **여러 머신 병렬**: 각 머신에서 서로 다른 `--modes`/`--generators`(또는 데이터 subset)를 돌리고 `results*.csv`를 수동 병합. resumable이라 안전.
 
 ## 레거시 단계별 스크립트
 `scripts/00_run_e2e_pipeline.py` 외 단계별 스크립트(01~16)도 그대로 동작합니다. 일상 사용은 `vrag` CLI를 권장합니다.
