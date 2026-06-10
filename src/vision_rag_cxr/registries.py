@@ -21,7 +21,6 @@ from vision_rag_cxr.prompting.registry import PROMPT_CATALOG, build_style_profil
 DATASET_CATALOG = {
     "indiana": "로컬 Indiana CSV+이미지 (datasets.indiana.preprocess_indiana)",
     "indiana_hf": "HF ykumards/open-i 스트리밍 실제 IU (무인증, chest)",
-    "roco": "HF eltorio/ROCOv2-radiology 스트리밍 (무인증, 멀티-모달리티, caption=impression, 라벨없음/텍스트전용)",
     "padchest_gr": "PadChest-GR (arXiv:2411.05085) — grounded report: 24-label + bbox GT(정규화 xyxy). 실제 배포본 배치됨(b2drop)",
 }
 
@@ -35,9 +34,11 @@ GENERATOR_CATALOG = {
     "qwen2.5-vl": {"model_name": "qwen2.5-vl", "model_name_or_path": "Qwen/Qwen2.5-VL-7B-Instruct",
                    "backend": "transformers", "device_map": "auto", "dtype": "float16",
                    "max_new_tokens": 256, "temperature": 0.0, "max_pixels": _QWEN_MAX_PIXELS},
-    "medgemma": {"model_name": "medgemma", "model_name_or_path": "google/medgemma-4b-it",
-                 "backend": "transformers", "device_map": "auto", "dtype": "float16",
-                 "max_new_tokens": 256, "temperature": 0.0},  # MedGemma(SigLIP)는 프로세서가 고정 해상도로 리사이즈
+    # MedGemma 4B = Gemma3ForConditionalGeneration(의료-튜닝, SigLIP vision은 고정 해상도 리사이즈).
+    # google 원본은 gated → 접근 가능한 unsloth 미러 사용. (라이선스 승인되면 google/medgemma-4b-it로 교체)
+    "medgemma": {"model_name": "medgemma", "model_name_or_path": "unsloth/medgemma-4b-it",
+                 "backend": "transformers", "device_map": "auto", "dtype": "bfloat16",
+                 "max_new_tokens": 256, "temperature": 0.0},
     "llava-med": {"model_name": "llava-med", "model_name_or_path": "microsoft/llava-med-v1.5-mistral-7b",
                   "backend": "transformers", "device_map": "auto", "dtype": "float16",
                   "trust_remote_code": True, "max_new_tokens": 256, "temperature": 0.0},

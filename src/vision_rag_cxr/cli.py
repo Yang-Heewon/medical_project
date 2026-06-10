@@ -54,8 +54,7 @@ def cmd_list(args):
 
 # ---- ② build ----------------------------------------------------------------
 def cmd_build(args):
-    _hf_scripts = {"indiana_hf": ("15_build_real_iu_from_hf.py", "real_iu_paired.csv"),
-                   "roco": ("17_build_roco_from_hf.py", "roco_paired.csv")}
+    _hf_scripts = {"indiana_hf": ("15_build_real_iu_from_hf.py", "real_iu_paired.csv")}
     if args.dataset in _hf_scripts:
         script, csv_name = _hf_scripts[args.dataset]
         cmd = [sys.executable, "-u", str(REPO_ROOT / "scripts" / script), "--out_dir", args.out, "--limit", str(args.limit)]

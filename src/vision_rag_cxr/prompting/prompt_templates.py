@@ -3,7 +3,7 @@
 STYLE_PROFILE은 TextGrad가 최적화할 수 있는 부분이다.
 모델 weight를 바꾸지 않고 prompt instruction fragment만 수정한다.
 
-modality-parameterized: 데이터셋이 chest가 아닐 수 있으므로(ROCO 등 멀티-모달리티) 프롬프트에
+modality-parameterized: 데이터셋이 chest가 아닐 수 있으므로(멀티-모달리티 가능) 프롬프트에
 'chest X-ray'를 박지 않는다. {modality}는 sample/dataset의 modality로 채우고(없으면 generic),
 모델에게 '실제 보이는 모달리티/해부 부위를 먼저 식별하고 그에 맞는 소견을 기술'하라고 지시한다.
 """

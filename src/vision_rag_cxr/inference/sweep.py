@@ -42,7 +42,7 @@ def _log(out_dir, msg):
 
 def _impression_metrics(pred_csv: str, labels: list[str], label_space: str = "chexbert_14") -> dict:
     """생성 impression 평가: (1) 텍스트(BERTScore/ROUGE vs GT impression) (2) 라벨 F1.
-    채점기는 label_space에 맞춰 plug-in (PadChest-GR이면 24-finding 패턴). ROCO처럼 라벨이 없으면
+    채점기는 label_space에 맞춰 plug-in (PadChest-GR이면 24-finding 패턴). 라벨이 없는 데이터면
     F1은 0 근처지만 텍스트 지표가 핵심."""
     df = pd.read_csv(pred_csv)
     lab = build_labeler({"label_space": label_space})
