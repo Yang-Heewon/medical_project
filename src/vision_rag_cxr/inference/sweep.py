@@ -41,25 +41,38 @@ def _log(out_dir, msg):
 
 
 def _impression_metrics(pred_csv: str, labels: list[str]) -> dict:
-    """생성 impression에서 예측 label을 뽑아 GT label과 micro/macro F1 계산."""
+    """생성 impression 평가: (1) 텍스트(BERTScore/ROUGE vs GT impression) (2) 라벨 CheXbert F1.
+    ROCO처럼 라벨이 없으면 F1은 0 근처지만 텍스트 지표가 핵심."""
     df = pd.read_csv(pred_csv)
     lab = CheXbertLikeLabeler()
     preds, gts = [], []
+    pred_texts, gt_texts = [], []
     for _, r in df.iterrows():
         raw = str(r.get("parsed_output") or r.get("raw_output") or "")
         try:
             obj = json.loads(raw)
-            text = str(obj.get("impression", "")) + " " + " ".join(map(str, obj.get("mentioned_findings", [])))
+            imp = str(obj.get("impression", ""))
+            text = imp + " " + " ".join(map(str, obj.get("mentioned_findings", [])))
         except Exception:
+            imp = raw
             text = raw
         b, _ = lab.label_report(text)
         preds.append(json.dumps(b))
         gts.append(str(r.get("gt_labels") or "{}"))
+        pred_texts.append(imp)
+        gt_texts.append(str(r.get("gt_impression") or ""))
     if not preds:
         return {}
-    y_pred = labels_json_to_matrix(preds, labels)
-    y_true = labels_json_to_matrix(gts, labels)
-    return multilabel_scores(y_true, y_pred)
+    out = dict(multilabel_scores(labels_json_to_matrix(gts, labels), labels_json_to_matrix(preds, labels)))
+    # 텍스트(impression) 위주 평가
+    try:
+        from vision_rag_cxr.evaluation.report_metrics import compute_text_similarity_metrics
+        ts = compute_text_similarity_metrics(pred_texts, gt_texts)
+        out["impression_bertscore"] = ts.get("bertscore_f1")
+        out["impression_rougeL"] = ts.get("rougeL_f")
+    except Exception:
+        pass
+    return out
 
 
 def run_sweep(cfg: dict):

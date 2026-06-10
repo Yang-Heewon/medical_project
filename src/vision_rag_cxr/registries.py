@@ -18,7 +18,8 @@ from vision_rag_cxr.models.generators.factory import build_generator
 # ---- ① 데이터셋 카탈로그 ----------------------------------------------------
 DATASET_CATALOG = {
     "indiana": "로컬 Indiana CSV+이미지 (datasets.indiana.preprocess_indiana)",
-    "indiana_hf": "HF ykumards/open-i 스트리밍 실제 IU (무인증)",
+    "indiana_hf": "HF ykumards/open-i 스트리밍 실제 IU (무인증, chest)",
+    "roco": "HF eltorio/ROCOv2-radiology 스트리밍 (무인증, 멀티-모달리티, caption=impression, 라벨없음/텍스트전용)",
     "padchest_gr": "PadChest-GR — 24-label + bbox GT (BIMCV 승인 필요)",
 }
 
