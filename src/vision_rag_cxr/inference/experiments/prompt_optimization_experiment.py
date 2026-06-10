@@ -117,9 +117,11 @@ def _gen_one(generator, row: dict, style_profile: str, labeler) -> dict:
 
 def _generate_dev(generators, dev_rows: list[dict], style_profile: str, labeler) -> list[dict]:
     """dev set impression 생성. generators가 여러 개면 GPU별 데이터-병렬(연속 chunk)로 동시 생성."""
+    from tqdm import tqdm
     gens = generators if isinstance(generators, list) else [generators]
     if len(gens) == 1:
-        return [_gen_one(gens[0], r, style_profile, labeler) for r in dev_rows]
+        return [_gen_one(gens[0], r, style_profile, labeler)
+                for r in tqdm(dev_rows, desc="textgrad-gen", mininterval=10.0)]
     import math
     from concurrent.futures import ThreadPoolExecutor
 
@@ -127,7 +129,9 @@ def _generate_dev(generators, dev_rows: list[dict], style_profile: str, labeler)
     size = math.ceil(len(dev_rows) / n)
     chunks = [dev_rows[i * size : (i + 1) * size] for i in range(n)]
     def _run(gi):
-        return [_gen_one(gens[gi], r, style_profile, labeler) for r in chunks[gi]]
+        # GPU별 진행바(스레드별 라인). 로그 폭주 방지 위해 mininterval 크게.
+        return [_gen_one(gens[gi], r, style_profile, labeler)
+                for r in tqdm(chunks[gi], desc=f"gen-gpu{gi}", position=gi, mininterval=10.0)]
     with ThreadPoolExecutor(max_workers=n) as ex:
         parts = list(ex.map(_run, range(n)))  # 순서 보존(연속 chunk)
     out: list[dict] = []
