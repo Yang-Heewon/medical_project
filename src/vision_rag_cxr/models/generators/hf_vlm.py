@@ -57,9 +57,13 @@ class HFVLMGenerator(BaseGenerator):
         local_files_only = bool(self.config.get("local_files_only", False))
         trust = bool(self.config.get("trust_remote_code", False))
 
-        self.processor = AutoProcessor.from_pretrained(
-            self.model_name_or_path, local_files_only=local_files_only, trust_remote_code=trust
-        )
+        # 이미지 사이즈는 VLM 자기 프로세서의 네이티브 리사이즈에 맡긴다(공정성: 같은 VLM이 받는 사이즈로).
+        # Qwen2.5-VL류는 min_pixels/max_pixels(28-grid 픽셀 예산)로 동적 리사이즈한다.
+        proc_kwargs: dict[str, Any] = {"local_files_only": local_files_only, "trust_remote_code": trust}
+        for k in ("min_pixels", "max_pixels"):
+            if self.config.get(k) is not None:
+                proc_kwargs[k] = int(self.config[k])
+        self.processor = AutoProcessor.from_pretrained(self.model_name_or_path, **proc_kwargs)
         model_kwargs: dict[str, Any] = {
             "local_files_only": local_files_only, "trust_remote_code": trust, "torch_dtype": self.torch_dtype,
         }
@@ -102,9 +106,10 @@ class HFVLMGenerator(BaseGenerator):
         if not p.exists():
             return None
         img = Image.open(p).convert("RGB")
-        # CXR 원본은 ~2300x2048처럼 매우 커서 Qwen2.5-VL 등 dynamic-resolution VLM의
-        # visual token이 폭발(OOM)한다. 긴 변을 max_image_size로 제한해 token 수를 묶는다.
-        max_side = int(self.config.get("max_image_size", 896))
+        # 기본은 PIL 선축소 없이 원본을 넘겨, VLM 프로세서가 자기 네이티브 사이즈로 리사이즈하게 한다
+        # (공정성: 같은 VLM이 실제로 받는 해상도). 토큰/메모리 상한은 processor의 max_pixels로 묶는다.
+        # max_image_size를 명시적으로 0이 아닌 값으로 주면 (레거시) 긴 변을 그 값으로 선축소한다.
+        max_side = int(self.config.get("max_image_size", 0) or 0)
         if max_side and max(img.size) > max_side:
             img.thumbnail((max_side, max_side), Image.BILINEAR)
         return img
