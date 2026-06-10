@@ -26,6 +26,11 @@ sentence-transformers>=3.0.0
 open-clip-torch>=3.0.0
 # HF 데이터셋 스트리밍 (vrag build --dataset indiana_hf 등)
 datasets>=2.14.0
+# BioViL-T encoder(--encoder biovil_t): CXR 특화. PyPI엔 hi-ml-multimodal(=health_multimodal).
+# torch를 건드리지 않게 --no-deps 설치 후 leaf 의존성만 별도 설치:
+#   pip install --no-deps hi-ml-multimodal pydicom SimpleITK scikit-image lazy_loader imageio tifffile networkx
+hi-ml-multimodal>=0.2.0
+pydicom; SimpleITK; scikit-image
 # bitsandbytes(4bit)는 CUDA 전용 -> macOS에서는 설치/사용 안 함
 bitsandbytes>=0.43.0; platform_system != "Darwin"
 

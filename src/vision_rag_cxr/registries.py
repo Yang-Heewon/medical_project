@@ -50,6 +50,9 @@ ENCODER_CATALOG = {
     "biomedclip": {"vision_encoder_name": "medclip", "benchmark_tag": "biomedclip",
                    "model_name_or_path": "hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224",
                    "device": "cuda", "batch_size": 16, "embedding_dim": 512},
+    # BioViL-T: CXR 특화(MIMIC-CXR+리포트). health_multimodal 필요. 흉부 검색 이웃 품질 우수.
+    "biovil_t": {"vision_encoder_name": "biovil", "benchmark_tag": "biovil_t",
+                 "device": "cuda", "batch_size": 16, "embedding_dim": 128},
     "dummy_hash": {"vision_encoder_name": "dummy_hash", "benchmark_tag": "dummy_hash", "embedding_dim": 384},
 }
 
