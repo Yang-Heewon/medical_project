@@ -34,11 +34,14 @@ GENERATOR_CATALOG = {
     "qwen2.5-vl": {"model_name": "qwen2.5-vl", "model_name_or_path": "Qwen/Qwen2.5-VL-7B-Instruct",
                    "backend": "transformers", "device_map": "auto", "dtype": "float16",
                    "max_new_tokens": 256, "temperature": 0.0, "max_pixels": _QWEN_MAX_PIXELS},
-    # MedGemma 4B = Gemma3ForConditionalGeneration(의료-튜닝, SigLIP vision은 고정 해상도 리사이즈).
-    # google 원본은 gated → 접근 가능한 unsloth 미러 사용. (라이선스 승인되면 google/medgemma-4b-it로 교체)
-    "medgemma": {"model_name": "medgemma", "model_name_or_path": "unsloth/medgemma-4b-it",
+    # MedGemma 4B = Gemma3ForConditionalGeneration(의료-튜닝 멀티모달, SigLIP vision 고정 해상도).
+    "medgemma": {"model_name": "medgemma", "model_name_or_path": "google/medgemma-4b-it",
                  "backend": "transformers", "device_map": "auto", "dtype": "bfloat16",
                  "max_new_tokens": 256, "temperature": 0.0},
+    # MedGemma 27B(멀티모달). bf16 ~54GB → V100 1장 불가. device_map="auto"로 2+ GPU 모델분할(1 replica).
+    "medgemma-27b": {"model_name": "medgemma-27b", "model_name_or_path": "google/medgemma-27b-it",
+                     "backend": "transformers", "device_map": "auto", "dtype": "bfloat16",
+                     "max_new_tokens": 256, "temperature": 0.0},
     "llava-med": {"model_name": "llava-med", "model_name_or_path": "microsoft/llava-med-v1.5-mistral-7b",
                   "backend": "transformers", "device_map": "auto", "dtype": "float16",
                   "trust_remote_code": True, "max_new_tokens": 256, "temperature": 0.0},
