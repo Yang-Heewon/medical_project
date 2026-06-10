@@ -77,8 +77,145 @@ def _parse_findings(value):
     return []
 
 
+def _build_from_grounded_json(config: dict) -> pd.DataFrame:
+    """실제 PadChest-GR 배포본(grounded_reports_*.json + master_table.csv)을 canonical로 변환.
+
+    실제 스키마:
+    - grounded_reports JSON = study list. 각 record: {StudyID, ImageID, findings:[...]}
+        finding: {sentence_en, sentence_es, abnormal(bool), boxes:[[x1,y1,x2,y2] 정규화 0-1],
+                  extra_boxes, labels:[fine label...], locations:[...], progression}
+    - master_table.csv = (StudyID, ImageID, label) 행마다 label_group(coarse 26종) + split 제공.
+      fine label -> label_group 매핑과 ImageID -> split을 여기서 얻는다.
+      label_group 26종 = 24 finding + 'Normal'(->No Finding) + 'Other Entities'(->Other).
+    """
+    out_dir = ensure_dir(config.get("output_dir", "outputs/preprocessed_padchest_gr"))
+    image_root = Path(config.get("image_root", "/root/research/heewon/data/padchest_gr/images"))
+    verify_exists = bool(config.get("verify_image_exists", False))
+    lang = str(config.get("report_lang", "en")).lower()
+    include_negatives = bool(config.get("include_negatives_in_report", True))
+    sent_key = "sentence_en" if lang == "en" else "sentence_es"
+
+    grounded = Path(config["grounded_json"])
+    master_table = Path(config.get("master_table", grounded.parent / "master_table.csv"))
+    records = json.loads(grounded.read_text(encoding="utf-8"))
+
+    # master_table: fine label -> label_group, ImageID -> split
+    fine2group: dict[str, str] = {}
+    img2split: dict[str, str] = {}
+    if master_table.exists():
+        mt = pd.read_csv(master_table)
+        for _, mr in mt[["label", "label_group"]].dropna().iterrows():
+            fine2group[str(mr["label"]).strip().lower()] = str(mr["label_group"]).strip()
+        if "split" in mt.columns:
+            for _, mr in mt[["ImageID", "split"]].dropna().drop_duplicates("ImageID").iterrows():
+                img2split[str(mr["ImageID"])] = str(mr["split"])
+
+    def _category(fine_label: str) -> str | None:
+        """fine label -> 24 category. 'Normal'이면 None(No Finding), 그 외 못찾으면 'Other'."""
+        group = fine2group.get(str(fine_label).strip().lower(), str(fine_label).strip())
+        g = group.lower()
+        if g == "normal":
+            return None
+        if g in _FINDING_LOOKUP:
+            return _FINDING_LOOKUP[g]
+        return "Other"
+
+    rows = []
+    n_no_image = 0
+    label_counter = Counter()
+    for rec in records:
+        uid = str(rec.get("StudyID") or rec.get("ImageID"))
+        image_name = str(rec.get("ImageID", "") or "")
+        frontal_path = image_name if Path(image_name).is_absolute() else str(image_root / image_name)
+        if verify_exists and not Path(frontal_path).exists():
+            n_no_image += 1
+            continue
+
+        binary = {label: 0 for label in PADCHEST_GR_LABELS}
+        all_sentences, pos_sentences, loc_phrases, localization_gt = [], [], [], []
+        for f in rec.get("findings", []) or []:
+            sent = str(f.get(sent_key) or f.get("sentence_en") or "").strip()
+            if sent:
+                all_sentences.append(sent)
+            abnormal = bool(f.get("abnormal"))
+            cats = []
+            for fine in (f.get("labels") or []):
+                cat = _category(fine)
+                if cat is not None:
+                    binary[cat] = 1
+                    cats.append(cat)
+            cat0 = cats[0] if cats else "Other"
+            if abnormal and sent:
+                pos_sentences.append(sent)
+            locs = f.get("locations") or []
+            if locs and cats:
+                loc_phrases.append(f"{cat0}: {', '.join(str(x) for x in locs)}")
+            # boxes/extra_boxes: 각각 정규화 xyxy [x1,y1,x2,y2] (reader 위치=인덱스)
+            for reader_idx, box in enumerate((f.get("boxes") or []) + (f.get("extra_boxes") or [])):
+                if box and len(box) >= 4:
+                    localization_gt.append(
+                        {"label": cat0, "bbox_xyxy": [float(v) for v in box[:4]],
+                         "normalized": True, "reader": reader_idx}
+                    )
+
+        if not any(binary[l] for l in PADCHEST_GR_FINDINGS + ["Other"]):
+            binary["No Finding"] = 1
+        for label in PADCHEST_GR_LABELS:
+            label_counter[label] += binary[label]
+
+        report_text = " ".join(all_sentences) if include_negatives else " ".join(pos_sentences)
+        rows.append({
+            "uid": uid,
+            "frontal_path": frontal_path,
+            "lateral_path": "",
+            "impression": report_text,
+            "findings": " ".join(pos_sentences),
+            "MeSH": "",
+            "Problems": "",
+            "chexbert_labels_binary": json.dumps(binary, ensure_ascii=False),
+            "chexbert_labels_raw": json.dumps(binary, ensure_ascii=False),
+            "anatomy_pathology_phrase": " | ".join(loc_phrases),
+            "localization_gt": json.dumps(localization_gt, ensure_ascii=False),
+            "split": img2split.get(image_name, ""),
+            "projection_source": "padchest_gr",
+        })
+
+    paired = pd.DataFrame(rows)
+    paired.to_csv(Path(out_dir) / "indiana_paired_samples.csv", index=False)  # canonical 파일명(파이프라인 호환)
+    paired.to_csv(Path(out_dir) / "padchest_gr_paired.csv", index=False)
+    save_jsonl((r for r in rows), Path(out_dir) / "indiana_paired_samples.jsonl")
+    write_label_space_sidecar(out_dir, "padchest_gr_24")
+
+    dist = pd.DataFrame([{"label": l, "positive_count": label_counter[l]} for l in PADCHEST_GR_LABELS])
+    dist.to_csv(Path(out_dir) / "label_distribution.csv", index=False)
+    with_bbox = sum(1 for r in rows if json.loads(r["localization_gt"]))
+    split_counts = paired["split"].value_counts().to_dict() if len(paired) else {}
+    report_md = [
+        "# PadChest-GR preprocess report (real grounded_reports)",
+        "",
+        f"- grounded_json: {grounded}",
+        f"- master_table: {master_table}",
+        f"- image_root: {image_root} (verify_image_exists={verify_exists})",
+        f"- report_lang: {lang}",
+        f"- studies: {len(records)} / paired_samples: {len(paired)} / dropped_no_image: {n_no_image}",
+        f"- with_bbox_gt: {with_bbox}",
+        f"- official splits: {split_counts}",
+        f"- label_space: padchest_gr_24 (No Finding + 24 findings + Other)",
+        "",
+        "## Label distribution (positive count)",
+    ]
+    report_md += [f"- {l}: {label_counter[l]}" for l in PADCHEST_GR_LABELS]
+    (Path(out_dir) / "preprocess_report.md").write_text("\n".join(report_md), encoding="utf-8")
+    print(f"PadChest-GR(real) paired: {len(paired)} | with_bbox={with_bbox} | splits={split_counts}", flush=True)
+    return paired
+
+
 def preprocess_padchest_gr(config: dict) -> pd.DataFrame:
     """PadChest-GR -> canonical paired sample table."""
+    # 실제 배포본(grounded_reports JSON) 경로가 있으면 전용 빌더 사용.
+    if config.get("grounded_json"):
+        return _build_from_grounded_json(config)
+
     image_root = Path(config.get("image_root", "/root/data/padchest_gr/images"))
     master = config.get("master_csv") or config.get("master_jsonl")
     if not master:

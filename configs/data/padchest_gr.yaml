@@ -1,0 +1,13 @@
+# PadChest-GR (arXiv:2411.05085) — grounded radiology report.
+# 실제 배포본(b2drop public share): grounded_reports_*.json + master_table.csv + 멀티파트 이미지 zip.
+# task: grounded report(impression) 생성 + 24-finding 라벨 + bbox GT(정규화 xyxy) localization.
+#
+#   vrag build --dataset padchest_gr --config configs/data/padchest_gr.yaml --out data/padchest_gr/canonical
+dataset_type: padchest_gr
+grounded_json: /root/research/heewon/data/padchest_gr/grounded_reports_20240819.json
+master_table: /root/research/heewon/data/padchest_gr/master_table.csv
+image_root: /root/research/heewon/data/padchest_gr/images
+output_dir: /root/research/heewon/data/padchest_gr/canonical
+verify_image_exists: false   # 이미지 zip 해제 완료 후 true 권장
+report_lang: en
+include_negatives_in_report: true

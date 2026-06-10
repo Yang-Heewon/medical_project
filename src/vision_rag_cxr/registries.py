@@ -20,7 +20,7 @@ DATASET_CATALOG = {
     "indiana": "로컬 Indiana CSV+이미지 (datasets.indiana.preprocess_indiana)",
     "indiana_hf": "HF ykumards/open-i 스트리밍 실제 IU (무인증, chest)",
     "roco": "HF eltorio/ROCOv2-radiology 스트리밍 (무인증, 멀티-모달리티, caption=impression, 라벨없음/텍스트전용)",
-    "padchest_gr": "PadChest-GR — 24-label + bbox GT (BIMCV 승인 필요)",
+    "padchest_gr": "PadChest-GR (arXiv:2411.05085) — grounded report: 24-label + bbox GT(정규화 xyxy). 실제 배포본 배치됨(b2drop)",
 }
 
 # ---- ③ generator preset (backend transformers, V100 fp16, 이미지 다운스케일) ----
@@ -47,7 +47,7 @@ ENCODER_CATALOG = {
 
 # 현재 제약/주의 (plug-in이지만 추가 작업 필요한 것)
 CATALOG_NOTES = {
-    "padchest_gr": "데이터 BIMCV 승인 필요(현재 미배치)",
+    "padchest_gr": "grounded_reports JSON+master_table로 canonical 구축 완료(4555 study, bbox GT 3008); 이미지 zip(38.5GB) 해제 후 inference",
     "llava-med": "model_type 'llava_mistral' — 표준 transformers 로드 불가(별도 LLaVA 코드 필요)",
 }
 
