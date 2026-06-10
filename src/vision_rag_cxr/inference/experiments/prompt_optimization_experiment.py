@@ -28,7 +28,7 @@ from vision_rag_cxr.evaluation.report_metrics import compute_text_similarity_met
 from vision_rag_cxr.models.critics.qwen import build_critic
 from vision_rag_cxr.models.generators.factory import build_generator
 from vision_rag_cxr.prompting.parser import parse_json_output
-from vision_rag_cxr.prompting.prompt_templates import BASE_STYLE_PROFILE, IMPRESSION_PROMPT
+from vision_rag_cxr.prompting.prompt_templates import BASE_STYLE_PROFILE, IMPRESSION_PROMPT, render_prompt
 from vision_rag_cxr.prompting.textgrad_optimizer import (
     accept_optimized_prompt,
     evaluate_lesion_preservation_ttest,
@@ -93,7 +93,10 @@ def _set_jaccard(a: dict[str, int], b: dict[str, int], abn: list[str]) -> float:
     return len(pa & pb) / union if union else 1.0
 
 
-def _gen_one(generator, row: dict, prompt: str, labeler) -> dict:
+def _gen_one(generator, row: dict, style_profile: str, labeler) -> dict:
+    # modality는 sample별로 채운다(데이터셋이 chest가 아닐 수 있음 → chest 고정 금지).
+    prompt = render_prompt(IMPRESSION_PROMPT, style_profile=style_profile,
+                           context_examples="", modality=row.get("modality"))
     raw = generator.generate_impression(row, prompt, context_examples=None)
     pred = _pred_binary_from_raw(raw, labeler)
     gt = _gt_binary(row, labeler.labels)
@@ -113,10 +116,9 @@ def _gen_one(generator, row: dict, prompt: str, labeler) -> dict:
 
 def _generate_dev(generators, dev_rows: list[dict], style_profile: str, labeler) -> list[dict]:
     """dev set impression 생성. generators가 여러 개면 GPU별 데이터-병렬(연속 chunk)로 동시 생성."""
-    prompt = IMPRESSION_PROMPT.format(style_profile=style_profile, context_examples="")
     gens = generators if isinstance(generators, list) else [generators]
     if len(gens) == 1:
-        return [_gen_one(gens[0], r, prompt, labeler) for r in dev_rows]
+        return [_gen_one(gens[0], r, style_profile, labeler) for r in dev_rows]
     import math
     from concurrent.futures import ThreadPoolExecutor
 
@@ -124,7 +126,7 @@ def _generate_dev(generators, dev_rows: list[dict], style_profile: str, labeler)
     size = math.ceil(len(dev_rows) / n)
     chunks = [dev_rows[i * size : (i + 1) * size] for i in range(n)]
     def _run(gi):
-        return [_gen_one(gens[gi], r, prompt, labeler) for r in chunks[gi]]
+        return [_gen_one(gens[gi], r, style_profile, labeler) for r in chunks[gi]]
     with ThreadPoolExecutor(max_workers=n) as ex:
         parts = list(ex.map(_run, range(n)))  # 순서 보존(연속 chunk)
     out: list[dict] = []

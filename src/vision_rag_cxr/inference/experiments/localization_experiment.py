@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from vision_rag_cxr.inference.experiments.experiment_base import ExperimentBase
 from vision_rag_cxr.models.generators.factory import build_generator
-from vision_rag_cxr.prompting.prompt_templates import BASE_STYLE_PROFILE, LOCALIZATION_PROMPT
+from vision_rag_cxr.prompting.prompt_templates import BASE_STYLE_PROFILE, LOCALIZATION_PROMPT, render_prompt
 from vision_rag_cxr.inference.retrieval.prompt_context_builder import build_context_examples_text
 from vision_rag_cxr.inference.retrieval.retriever_factory import build_retriever_for_experiment
 
@@ -33,7 +33,8 @@ class LocalizationExperiment(ExperimentBase):
             sample = row.to_dict()
             context_examples = retriever.retrieve(sample, self.config.get("top_k", 5)) if retriever else []
             context_text = build_context_examples_text(context_examples)
-            prompt = LOCALIZATION_PROMPT.format(style_profile=style_profile, context_examples=context_text)
+            prompt = render_prompt(LOCALIZATION_PROMPT, style_profile=style_profile,
+                                   context_examples=context_text, modality=sample.get("modality"))
             pred = generator.generate_localization(sample, prompt, context_examples=context_examples)
 
             rows.append(

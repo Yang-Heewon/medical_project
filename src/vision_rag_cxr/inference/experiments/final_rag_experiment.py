@@ -10,7 +10,7 @@ from tqdm import tqdm
 from vision_rag_cxr.inference.experiments.experiment_base import ExperimentBase
 from vision_rag_cxr.models.generators.factory import build_generator
 from vision_rag_cxr.prompting.parser import parse_json_output
-from vision_rag_cxr.prompting.prompt_templates import BASE_STYLE_PROFILE, IMPRESSION_PROMPT
+from vision_rag_cxr.prompting.prompt_templates import BASE_STYLE_PROFILE, IMPRESSION_PROMPT, render_prompt
 from vision_rag_cxr.inference.retrieval.prompt_context_builder import build_context_examples_text
 from vision_rag_cxr.inference.retrieval.retriever_factory import build_retriever_config
 from vision_rag_cxr.inference.retrieval.related_retriever import RelatedRetriever
@@ -43,7 +43,8 @@ class FinalRAGExperiment(ExperimentBase):
                 ("vision_rag", retriever.retrieve(sample, self.config.get("top_k", 5))),
             ]:
                 context_text = build_context_examples_text(context_examples)
-                prompt = IMPRESSION_PROMPT.format(style_profile=style_profile, context_examples=context_text)
+                prompt = render_prompt(IMPRESSION_PROMPT, style_profile=style_profile,
+                                       context_examples=context_text, modality=sample.get("modality"))
                 raw = generator.generate_impression(sample, prompt, context_examples=context_examples)
                 parsed, err = parse_json_output(raw)
                 rows.append(

@@ -178,6 +178,7 @@ def _build_from_grounded_json(config: dict) -> pd.DataFrame:
             "localization_gt": json.dumps(localization_gt, ensure_ascii=False),
             "split": img2split.get(image_name, ""),
             "projection_source": "padchest_gr",
+            "modality": "chest X-ray",
         })
 
     paired = pd.DataFrame(rows)
