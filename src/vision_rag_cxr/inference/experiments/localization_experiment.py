@@ -9,16 +9,14 @@ from tqdm import tqdm
 
 from vision_rag_cxr.inference.experiments.experiment_base import ExperimentBase
 from vision_rag_cxr.models.generators.factory import build_generator
-from vision_rag_cxr.prompting.prompt_templates import BASE_STYLE_PROFILE, LOCALIZATION_PROMPT, render_prompt
+from vision_rag_cxr.prompting.prompt_templates import LOCALIZATION_PROMPT, render_prompt
+from vision_rag_cxr.prompting.registry import resolve_style_profile
 from vision_rag_cxr.inference.retrieval.prompt_context_builder import build_context_examples_text
 from vision_rag_cxr.inference.retrieval.retriever_factory import build_retriever_for_experiment
 
 
 def _style_profile_from_config(config: dict) -> str:
-    path = config.get("optimized_style_profile_path")
-    if path and Path(path).exists():
-        return Path(path).read_text(encoding="utf-8")
-    return config.get("style_profile", BASE_STYLE_PROFILE)
+    return resolve_style_profile(config)
 
 
 class LocalizationExperiment(ExperimentBase):

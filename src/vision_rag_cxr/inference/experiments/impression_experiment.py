@@ -10,17 +10,15 @@ from tqdm import tqdm
 from vision_rag_cxr.inference.experiments.experiment_base import ExperimentBase
 from vision_rag_cxr.models.generators.factory import build_generator
 from vision_rag_cxr.prompting.parser import parse_json_output
-from vision_rag_cxr.prompting.prompt_templates import BASE_STYLE_PROFILE, IMPRESSION_PROMPT, render_prompt
+from vision_rag_cxr.prompting.prompt_templates import IMPRESSION_PROMPT, render_prompt
+from vision_rag_cxr.prompting.registry import resolve_style_profile
 from vision_rag_cxr.inference.retrieval.prompt_context_builder import build_context_examples_text
 from vision_rag_cxr.inference.retrieval.retriever_factory import build_retriever_for_experiment
 
 
 def _style_profile_from_config(config: dict) -> str:
-    """TextGrad가 저장한 style profile이 있으면 사용하고, 없으면 기본값을 쓴다."""
-    path = config.get("optimized_style_profile_path")
-    if path and Path(path).exists():
-        return Path(path).read_text(encoding="utf-8")
-    return config.get("style_profile", BASE_STYLE_PROFILE)
+    """style profile plug-in 해석: optimized(TextGrad) > style_profile/prompt_profile(이름|경로|텍스트) > 기본."""
+    return resolve_style_profile(config)
 
 
 class ImpressionExperiment(ExperimentBase):

@@ -27,6 +27,7 @@ from vision_rag_cxr.registries import (  # noqa: E402
     ENCODER_CATALOG as ENCODERS,
     GENERATOR_CATALOG as GENERATORS,
     LABELER_CATALOG as LABELERS,
+    PROMPT_CATALOG as PROMPTS,
 )
 
 
@@ -46,6 +47,9 @@ def cmd_list(args):
     print("\n=== LABELERS (plug-in, label_space별 채점기) ===")
     for k, v in LABELERS.items():
         print(f"  {k:14s} {v}")
+    print("\n=== PROMPTS (plug-in, base STYLE_PROFILE) ===")
+    for k, v in PROMPTS.items():
+        print(f"  {k:18s} {v}")
 
 
 # ---- ② build ----------------------------------------------------------------
@@ -96,6 +100,9 @@ def cmd_infer(args):
     # TextGrad로 최적화된 프롬프트를 No-RAG/RAG 생성에 주입 (textgrad-first 순서)
     if getattr(args, "style_profile", None):
         cfg["optimized_style_profile_path"] = args.style_profile
+    # base 프롬프트 plug-in: 카탈로그 이름 | 파일 경로 | 리터럴 텍스트 (optimized가 있으면 그쪽 우선)
+    if getattr(args, "prompt_profile", None):
+        cfg["style_profile"] = args.prompt_profile
     # 디바이스 주입 (auto=cuda→mps→cpu). 맥(MPS)/CPU에서도 같은 명령으로 동작.
     for gc in cfg["generators"]:
         gc["device"] = args.device
@@ -173,6 +180,8 @@ def main():
                    help="auto=cuda→mps(Apple)→cpu 자동. 맥북은 auto 또는 mps")
     f.add_argument("--style-profile", default=None,
                    help="TextGrad로 최적화된 STYLE_PROFILE txt 경로 (textgrad-first 순서). 지정 시 No-RAG/RAG가 이 프롬프트로 생성")
+    f.add_argument("--prompt-profile", default=None,
+                   help=f"base 프롬프트 plug-in: 카탈로그 이름{list(PROMPTS)} | 파일 경로 | 리터럴 텍스트")
     f.set_defaults(func=cmd_infer)
 
     args = ap.parse_args()

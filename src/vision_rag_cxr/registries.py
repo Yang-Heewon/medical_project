@@ -15,6 +15,7 @@ from vision_rag_cxr.datasets.labeler_chexbert import LABELER_CATALOG, build_labe
 from vision_rag_cxr.models.critics.qwen import build_critic
 from vision_rag_cxr.models.encoders.base import build_vision_encoder
 from vision_rag_cxr.models.generators.factory import build_generator
+from vision_rag_cxr.prompting.registry import PROMPT_CATALOG, build_style_profile
 
 # ---- ① 데이터셋 카탈로그 ----------------------------------------------------
 DATASET_CATALOG = {
@@ -59,6 +60,6 @@ CATALOG_NOTES = {
 
 __all__ = [
     "preprocess_dataset", "build_generator", "build_vision_encoder", "build_critic", "build_labeler",
-    "PREPROCESSORS", "DATASET_CATALOG", "GENERATOR_CATALOG", "ENCODER_CATALOG", "LABELER_CATALOG",
-    "CATALOG_NOTES",
+    "build_style_profile", "PREPROCESSORS", "DATASET_CATALOG", "GENERATOR_CATALOG", "ENCODER_CATALOG",
+    "LABELER_CATALOG", "PROMPT_CATALOG", "CATALOG_NOTES",
 ]

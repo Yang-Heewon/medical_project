@@ -10,17 +10,15 @@ from tqdm import tqdm
 from vision_rag_cxr.inference.experiments.experiment_base import ExperimentBase
 from vision_rag_cxr.models.generators.factory import build_generator
 from vision_rag_cxr.prompting.parser import parse_json_output
-from vision_rag_cxr.prompting.prompt_templates import BASE_STYLE_PROFILE, IMPRESSION_PROMPT, render_prompt
+from vision_rag_cxr.prompting.prompt_templates import IMPRESSION_PROMPT, render_prompt
+from vision_rag_cxr.prompting.registry import resolve_style_profile
 from vision_rag_cxr.inference.retrieval.prompt_context_builder import build_context_examples_text
 from vision_rag_cxr.inference.retrieval.retriever_factory import build_retriever_config
 from vision_rag_cxr.inference.retrieval.related_retriever import RelatedRetriever
 
 
 def _style_profile(config: dict) -> str:
-    path = config.get("optimized_style_profile_path")
-    if path and Path(path).exists():
-        return Path(path).read_text(encoding="utf-8")
-    return config.get("style_profile", BASE_STYLE_PROFILE)
+    return resolve_style_profile(config)
 
 
 class FinalRAGExperiment(ExperimentBase):

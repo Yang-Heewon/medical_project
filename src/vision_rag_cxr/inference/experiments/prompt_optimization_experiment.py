@@ -29,6 +29,7 @@ from vision_rag_cxr.models.critics.qwen import build_critic
 from vision_rag_cxr.models.generators.factory import build_generator
 from vision_rag_cxr.prompting.parser import parse_json_output
 from vision_rag_cxr.prompting.prompt_templates import BASE_STYLE_PROFILE, IMPRESSION_PROMPT, render_prompt
+from vision_rag_cxr.prompting.registry import build_style_profile
 from vision_rag_cxr.prompting.textgrad_optimizer import (
     accept_optimized_prompt,
     evaluate_lesion_preservation_ttest,
@@ -274,7 +275,8 @@ def run_prompt_optimization(config: dict) -> dict:
     max_epochs = int(config.get("max_epochs", 4))
     dev_size = int(config.get("dev_sample_size", 64))
     critique_size = int(config.get("critique_sample_size", min(8, dev_size)))
-    init_style = config.get("style_profile_init") or BASE_STYLE_PROFILE
+    # style_profile_init은 plug-in: 카탈로그 이름 | 파일 경로 | 리터럴 텍스트 모두 허용.
+    init_style = build_style_profile(config.get("style_profile_init"), default=BASE_STYLE_PROFILE)
     accept_rule = config.get("acceptance_rule", {})
     gate_cfg = config.get("lesion_preservation_gate", {}) or {}
 
