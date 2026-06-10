@@ -80,28 +80,56 @@ class QwenCritic(BaseCritic):
 
     # --- critic API ----------------------------------------------------------
     def critique(self, prediction: str, target: str, sample: dict, metrics: dict) -> str:
-        if self.backend in {"placeholder", "dummy", "mock"}:
-            missed = metrics.get("missed_labels") or []
-            halluc = metrics.get("hallucinated_labels") or []
-            parts = []
-            if missed:
-                parts.append(f"누락된 병변: {missed}. impression에 명시적으로 언급해야 한다.")
-            if halluc:
-                parts.append(f"근거 없는 추가 병변(hallucination): {halluc}. 이미지에 없으면 만들지 말아야 한다.")
-            if metrics.get("normal_collapse"):
-                parts.append("abnormal GT인데 normal로 결론냈다(normal collapse). 보이는 abnormal finding을 기술하라.")
-            if not parts:
-                parts.append("prediction이 GT impression과 대체로 일치한다. 간결성과 임상 용어 일관성만 유지하라.")
-            return " ".join(parts)
+        # plug-in/out: 무엇을 비평할지 (config로 교체)
+        #   "style"   = 생성 impression vs 참조 impression(target=GT)의 표현/구조/길이 차이 (기본)
+        #   "clinical"= 누락/환각/normal collapse 등 임상 소견 차이
+        focus = str(self.config.get("critique_focus", "style")).lower()
 
-        system = "You are a meticulous radiology QA reviewer comparing a generated chest X-ray impression to the reference."
+        if self.backend in {"placeholder", "dummy", "mock"}:
+            if focus == "clinical":
+                missed = metrics.get("missed_labels") or []
+                halluc = metrics.get("hallucinated_labels") or []
+                parts = []
+                if missed:
+                    parts.append(f"누락된 병변: {missed}. impression에 명시적으로 언급해야 한다.")
+                if halluc:
+                    parts.append(f"근거 없는 추가 병변(hallucination): {halluc}. 이미지에 없으면 만들지 말아야 한다.")
+                if metrics.get("normal_collapse"):
+                    parts.append("abnormal GT인데 normal로 결론냈다(normal collapse). 보이는 abnormal finding을 기술하라.")
+                return " ".join(parts) or "prediction이 GT와 대체로 일치. 간결성/용어 일관성 유지."
+            # style
+            gp, pp = str(target or ""), str(prediction or "")
+            note = []
+            if len(pp) > len(gp) * 1.3:
+                note.append("생성 impression이 참조보다 장황하다. 참조처럼 간결하게.")
+            elif len(pp) < len(gp) * 0.7:
+                note.append("생성 impression이 참조보다 너무 짧다. 참조 수준의 정보량으로.")
+            note.append("참조 impression의 문장 구조·용어·어조에 맞춰 표현하라(병변 검출은 그대로 유지).")
+            return " ".join(note)
+
+        if focus == "clinical":
+            system = "You are a meticulous radiology QA reviewer comparing a generated chest X-ray impression to the reference."
+            user = (
+                f"Reference impression:\n{target}\n\n"
+                f"Generated impression:\n{prediction}\n\n"
+                f"Quantitative signals: {metrics}\n\n"
+                "List concrete clinical differences: missed findings, hallucinated findings, normal collapse. "
+                "Then actionable feedback for the STYLE_PROFILE only. Be concise."
+            )
+            return self._chat(system, user)
+
+        # focus == "style" (기본)
+        system = (
+            "You are a radiology report editor. You compare a generated chest X-ray IMPRESSION to the gold "
+            "reference impression and improve how it is WORDED — not which findings the model detects."
+        )
         user = (
-            f"Reference impression:\n{target}\n\n"
+            f"Reference impression (dataset gold style):\n{target}\n\n"
             f"Generated impression:\n{prediction}\n\n"
-            f"Quantitative signals: {metrics}\n\n"
-            "List concrete clinical differences: missed findings, hallucinated findings, and any normal collapse. "
-            "Then give actionable feedback for improving the generation prompt's STYLE_PROFILE only "
-            "(do not propose changing the model). Be concise."
+            "Point out concrete STYLE differences vs the reference: wording, structure/sectioning, length/conciseness, "
+            "terminology, phrasing, punctuation, formatting. Give actionable feedback to make the generated impression's "
+            "STYLE match the reference. Do NOT ask to add or remove clinical findings — the model's lesion detection "
+            "must stay unchanged. Be concise."
         )
         return self._chat(system, user)
 

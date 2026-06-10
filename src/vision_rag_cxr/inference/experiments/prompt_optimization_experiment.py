@@ -330,8 +330,9 @@ def run_prompt_optimization(config: dict) -> dict:
                 "hallucinated_labels": sorted(pred_abn - gt_abn),
                 "normal_collapse": bool(gt_abn and not pred_abn),
             }
+            # 참조(target)로 실제 GT impression을, prediction으로 생성 impression 텍스트를 넘긴다(버그 수정).
             critiques.append(
-                critic.critique(str(r["raw"]), str(r.get("uid", "")), r, sample_metrics)
+                critic.critique(str(r.get("pred_text", r["raw"])), str(r.get("gt_text", "")), r, sample_metrics)
             )
 
         # 2. candidate STYLE_PROFILE 생성 (현재 best prompt를 critic이 개선)
