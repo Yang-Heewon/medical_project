@@ -6,8 +6,8 @@
 dataset_type: padchest_gr
 grounded_json: /root/research/heewon/data/padchest_gr/grounded_reports_20240819.json
 master_table: /root/research/heewon/data/padchest_gr/master_table.csv
-image_root: /root/research/heewon/data/padchest_gr/images
+image_root: /root/research/heewon/data/padchest_gr/images/PadChest_GR   # zip 해제 시 중첩 디렉토리
 output_dir: /root/research/heewon/data/padchest_gr/canonical
-verify_image_exists: false   # 이미지 zip 해제 완료 후 true 권장
+verify_image_exists: true   # 이미지 해제 완료 — 실재 검증 (4555/4555)
 report_lang: en
 include_negatives_in_report: true
