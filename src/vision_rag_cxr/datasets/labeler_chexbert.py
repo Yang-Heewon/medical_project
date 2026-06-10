@@ -170,6 +170,55 @@ _NORMAL_CUES = [
 _WINDOW = 40  # negation/uncertainty를 keyword 앞쪽 몇 글자까지 볼지.
 
 
+# PadChest-GR 24-finding 키워드 패턴 (실제 grounded_reports 문장 어휘에 근거).
+# key는 PADCHEST_GR_FINDINGS 이름과 정확히 일치. "No Finding"은 파생, "Other"는 잔여라 패턴 없음.
+_PADCHEST_GR_PATTERNS: dict[str, list[str]] = {
+    "Aortic elongation": [r"aortic elongation", r"elongat\w*\s+aort", r"elongation of the aorta",
+                          r"unfold\w*\s+aort", r"aortic unfolding"],
+    "Cardiomegaly": [r"cardiomegal\w*", r"enlarged heart", r"cardiac enlargement",
+                     r"increased? cardiac silhouette", r"enlarged cardiac silhouette"],
+    "Nodule": [r"nodul\w*", r"granulom\w*"],
+    "Pleural effusion": [r"pleural effusion", r"\beffusion\b", r"costophrenic angle",
+                         r"blunting of the .{0,20}costophrenic", r"\bpleural fluid\b"],
+    "Scoliosis": [r"scolio\w*"],
+    "Vertebral degenerative changes": [r"spondyl\w*", r"osteophyt\w*",
+                                       r"degenerative\s+\w*\s*(change|column|spine|vertebr)",
+                                       r"vertebral degenerative", r"\bdiscopath\w*"],
+    "Hyperinflated lung": [r"air trapping", r"hyperinflat\w*", r"emphysem\w*", r"hyperinsufflat\w*"],
+    "Vascular hilar enlargement": [r"hilar enlargement", r"enlargement of the .{0,15}hil",
+                                   r"congested hil\w*", r"hilar congestion", r"prominent hil\w*",
+                                   r"vascular hil\w*"],
+    "Atelectasis": [r"atelecta\w*"],
+    "Aortic atheromatosis": [r"aortic calcification", r"calcified aort\w*", r"aortic atheromatosis",
+                            r"atheromatosis", r"calcified aortic"],
+    "Pleural thickening": [r"pleural thickening", r"apical (cap|thickening)", r"biapical\s+\w*\s*thickening"],
+    "Interstitial pattern": [r"interstitial pattern", r"interstitial infiltrate", r"interstitial-alveolar"],
+    "Alveolar pattern": [r"alveolar pattern", r"alveolar infiltrate", r"air\s?space\s+(disease|involvement|infiltrate)"],
+    "Electrical device": [r"pacemaker\w*", r"electrical device", r"\bholter\b", r"defibrillat\w*",
+                          r"\bicd\b", r"pacing (lead|wire)"],
+    "Hemidiaphragm elevation": [r"elevation of the .{0,15}hemidiaphragm", r"hemidiaphragm\w*\s+elevat\w*",
+                                r"elevat\w*\s+\w*\s*(hemidiaphragm|diaphragm)", r"diaphragm\w*\s+elevat\w*"],
+    "Fracture": [r"fractur\w+", r"\bcallus\w*", r"bone callus"],
+    "Hypoexpansion": [r"volume loss", r"hypoexpansion", r"hypoventilation", r"loss of volume",
+                      r"reduced lung volume", r"poor inspiration"],
+    "Central venous catheter": [r"central venous catheter", r"central line", r"central venous",
+                                r"\bpicc\b", r"jugular .{0,15}cath", r"subclavian .{0,15}(vein|line|cath)"],
+    "Hiatal hernia": [r"hiat\w*\s+hernia"],
+    "Endotracheal tube": [r"endotracheal tube", r"tracheostomy\w*", r"\bett\b", r"intubat\w*", r"orotracheal"],
+    "NSG tube": [r"nasogastric\w*", r"\bng tube\b", r"\bnsg tube\b", r"feeding tube", r"\bsng\b"],
+    "Bronchiectasis": [r"bronchiectasi\w*", r"bronchiectatic"],
+    "Goiter": [r"goit\w*re?", r"\bgoiter\b"],
+    "Osteopenia": [r"osteopen\w*", r"osteoporo\w*", r"demineraliz\w*", r"bone demineralisation"],
+}
+
+# label_space -> 패턴 세트 (plug-in/out: 데이터셋 라벨 공간마다 채점기 패턴을 끼운다).
+PATTERN_SETS: dict[str, dict[str, list[str]]] = {
+    "chexbert_14": _LABEL_PATTERNS,
+    "padchest_gr_24": _PADCHEST_GR_PATTERNS,
+    "padchest_gr": _PADCHEST_GR_PATTERNS,
+}
+
+
 def _has_cue(window_text: str, cues: Iterable[str]) -> bool:
     return any(cue in window_text for cue in cues)
 
@@ -185,10 +234,20 @@ class CheXbertLikeLabeler:
         self.config = config or {}
         # uncertain_policy: u_ones(기본) -> uncertain을 binary 1로. u_zeros -> 0으로.
         self.uncertain_policy = str(self.config.get("uncertain_policy", "u_ones")).lower()
-        self.labels = list(CHEXBERT_LABELS)
+        # plug-in/out: label_space마다 라벨 목록 + 키워드 패턴 세트를 끼운다.
+        self.label_space = str(self.config.get("label_space", "chexbert_14"))
+        patterns = PATTERN_SETS.get(self.label_space, _LABEL_PATTERNS)
+        if self.label_space in ("padchest_gr_24", "padchest_gr"):
+            from vision_rag_cxr.datasets.label_spaces import PADCHEST_GR_LABELS  # lazy: 순환 import 회피
+            self.labels = list(PADCHEST_GR_LABELS)
+        elif self.label_space == "chexbert_14":
+            self.labels = list(CHEXBERT_LABELS)
+        else:
+            from vision_rag_cxr.datasets.label_spaces import resolve_labels  # lazy
+            self.labels = resolve_labels({"label_space": self.label_space})
         self._compiled = {
-            label: [re.compile(p, flags=re.IGNORECASE) for p in patterns]
-            for label, patterns in _LABEL_PATTERNS.items()
+            label: [re.compile(p, flags=re.IGNORECASE) for p in pats]
+            for label, pats in patterns.items()
         }
 
     # --- 단일 텍스트 ---------------------------------------------------------
@@ -270,3 +329,23 @@ class CheXbertLikeLabeler:
 def labels_to_binary_vector(label_dict: dict[str, int]) -> list[int]:
     """label dict를 CHEXBERT_LABELS 순서의 0/1 vector로 변환한다."""
     return [int(label_dict.get(label, 0)) for label in CHEXBERT_LABELS]
+
+
+# label_space -> 사람이 읽는 채점기 카탈로그 (vrag list / plug-in 문서용).
+LABELER_CATALOG: dict[str, str] = {
+    "chexbert_14": "CheXbert-like 14-label keyword labeler (IU/CheXpert 계열)",
+    "padchest_gr_24": "PadChest-GR 24-finding keyword labeler (No Finding + 24 + Other)",
+}
+
+
+def build_labeler(config: dict | None = None) -> CheXbertLikeLabeler:
+    """label_space에 맞는 keyword labeler를 만든다 (plug-in/out).
+
+    config["label_space"]로 채점기 라벨 목록+패턴을 끼운다. 미지원 space는 CheXbert-14로 fallback.
+    실제 CheXbert 모델 등 다른 채점기를 붙이려면 config["labeler"]로 분기를 추가한다.
+    """
+    cfg = dict(config or {})
+    name = str(cfg.get("labeler", "keyword")).lower()
+    if name in ("keyword", "chexbert_like", "chexbert-like", ""):
+        return CheXbertLikeLabeler(cfg)
+    raise ValueError(f"지원하지 않는 labeler입니다: {name}")

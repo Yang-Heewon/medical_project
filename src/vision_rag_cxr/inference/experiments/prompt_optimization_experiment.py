@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from vision_rag_cxr.datasets.labeler_chexbert import CHEXBERT_LABELS, CheXbertLikeLabeler, labels_to_binary_vector
+from vision_rag_cxr.datasets.labeler_chexbert import build_labeler
 from vision_rag_cxr.evaluation.chexbert_metrics import multilabel_scores
 from vision_rag_cxr.evaluation.report_metrics import compute_text_similarity_metrics
 from vision_rag_cxr.models.critics.qwen import build_critic
@@ -37,10 +37,12 @@ from vision_rag_cxr.prompting.textgrad_optimizer import (
 )
 from vision_rag_cxr.utils.io import ensure_dir, load_yaml
 
-_ABNORMAL_LABELS = [l for l in CHEXBERT_LABELS if l != "No Finding"]
+def _abnormal(labels: list[str]) -> list[str]:
+    """label space에서 'No Finding'을 뺀 abnormal 라벨 목록 (데이터셋마다 다름)."""
+    return [l for l in labels if l != "No Finding"]
 
 
-def _gt_binary(row: dict) -> dict[str, int]:
+def _gt_binary(row: dict, labels: list[str]) -> dict[str, int]:
     value = row.get("chexbert_labels_binary")
     if isinstance(value, str) and value.strip():
         d = json.loads(value)
@@ -48,10 +50,14 @@ def _gt_binary(row: dict) -> dict[str, int]:
         d = value
     else:
         d = {}
-    return {label: int(d.get(label, 0)) for label in CHEXBERT_LABELS}
+    return {label: int(d.get(label, 0)) for label in labels}
 
 
-def _pred_binary_from_raw(raw: str, labeler: CheXbertLikeLabeler) -> dict[str, int]:
+def _to_vec(d: dict[str, int], labels: list[str]) -> list[int]:
+    return [int(d.get(l, 0)) for l in labels]
+
+
+def _pred_binary_from_raw(raw: str, labeler) -> dict[str, int]:
     """생성된 impression(JSON or text)에서 예측 label dict를 만든다."""
     parsed, _ = parse_json_output(raw)
     if isinstance(parsed, dict):
@@ -64,10 +70,10 @@ def _pred_binary_from_raw(raw: str, labeler: CheXbertLikeLabeler) -> dict[str, i
     return binary
 
 
-def _set_f1(pred: dict[str, int], gt: dict[str, int]) -> float:
+def _set_f1(pred: dict[str, int], gt: dict[str, int], abn: list[str]) -> float:
     """positive label 집합 기준 per-sample F1. 둘 다 비면 1.0."""
-    p = {l for l in _ABNORMAL_LABELS if pred.get(l, 0) == 1}
-    g = {l for l in _ABNORMAL_LABELS if gt.get(l, 0) == 1}
+    p = {l for l in abn if pred.get(l, 0) == 1}
+    g = {l for l in abn if gt.get(l, 0) == 1}
     if not p and not g:
         return 1.0
     if not p or not g:
@@ -78,19 +84,20 @@ def _set_f1(pred: dict[str, int], gt: dict[str, int]) -> float:
     return 0.0 if (precision + recall) == 0 else 2 * precision * recall / (precision + recall)
 
 
-def _set_jaccard(a: dict[str, int], b: dict[str, int]) -> float:
-    pa = {l for l in _ABNORMAL_LABELS if a.get(l, 0) == 1}
-    pb = {l for l in _ABNORMAL_LABELS if b.get(l, 0) == 1}
+def _set_jaccard(a: dict[str, int], b: dict[str, int], abn: list[str]) -> float:
+    pa = {l for l in abn if a.get(l, 0) == 1}
+    pb = {l for l in abn if b.get(l, 0) == 1}
     if not pa and not pb:
         return 1.0
     union = len(pa | pb)
     return len(pa & pb) / union if union else 1.0
 
 
-def _gen_one(generator, row: dict, prompt: str, labeler: CheXbertLikeLabeler) -> dict:
+def _gen_one(generator, row: dict, prompt: str, labeler) -> dict:
     raw = generator.generate_impression(row, prompt, context_examples=None)
     pred = _pred_binary_from_raw(raw, labeler)
-    gt = _gt_binary(row)
+    gt = _gt_binary(row, labeler.labels)
+    abn = _abnormal(labeler.labels)
     parsed, _ = parse_json_output(raw)
     pred_text = str(parsed.get("impression", "")) if isinstance(parsed, dict) else str(raw or "")
     return {
@@ -98,13 +105,13 @@ def _gen_one(generator, row: dict, prompt: str, labeler: CheXbertLikeLabeler) ->
         "raw": raw,
         "pred": pred,
         "gt": gt,
-        "lesion_score": _set_f1(pred, gt),         # 병변 정확도(제약용)
+        "lesion_score": _set_f1(pred, gt, abn),    # 병변 정확도(제약용)
         "pred_text": pred_text,                     # 생성 impression 텍스트(목표용)
         "gt_text": str(row.get("impression", "") or ""),
     }
 
 
-def _generate_dev(generators, dev_rows: list[dict], style_profile: str, labeler: CheXbertLikeLabeler) -> list[dict]:
+def _generate_dev(generators, dev_rows: list[dict], style_profile: str, labeler) -> list[dict]:
     """dev set impression 생성. generators가 여러 개면 GPU별 데이터-병렬(연속 chunk)로 동시 생성."""
     prompt = IMPRESSION_PROMPT.format(style_profile=style_profile, context_examples="")
     gens = generators if isinstance(generators, list) else [generators]
@@ -126,17 +133,19 @@ def _generate_dev(generators, dev_rows: list[dict], style_profile: str, labeler:
     return out
 
 
-def _aggregate_metrics(results: list[dict], baseline_results: list[dict] | None = None) -> dict:
-    """dev 결과에서 clinical/안전 metric을 집계한다."""
-    y_true = np.asarray([labels_to_binary_vector(r["gt"]) for r in results], dtype=int)
-    y_pred = np.asarray([labels_to_binary_vector(r["pred"]) for r in results], dtype=int)
+def _aggregate_metrics(results: list[dict], labels: list[str],
+                       baseline_results: list[dict] | None = None) -> dict:
+    """dev 결과에서 clinical/안전 metric을 집계한다 (label space는 labels로 주입)."""
+    abn = _abnormal(labels)
+    y_true = np.asarray([_to_vec(r["gt"], labels) for r in results], dtype=int)
+    y_pred = np.asarray([_to_vec(r["pred"], labels) for r in results], dtype=int)
     metrics = multilabel_scores(y_true, y_pred)
 
     normal_collapse = halluc = omission = 0
     halluc_cases = 0
     for r in results:
-        gt_abn = {l for l in _ABNORMAL_LABELS if r["gt"].get(l, 0) == 1}
-        pred_abn = {l for l in _ABNORMAL_LABELS if r["pred"].get(l, 0) == 1}
+        gt_abn = {l for l in abn if r["gt"].get(l, 0) == 1}
+        pred_abn = {l for l in abn if r["pred"].get(l, 0) == 1}
         if gt_abn and not pred_abn:
             normal_collapse += 1
         new = pred_abn - gt_abn
@@ -173,7 +182,7 @@ def _aggregate_metrics(results: list[dict], baseline_results: list[dict] | None 
         "new_hallucination_cases_vs_baseline": halluc_cases,
     }
     if baseline_results is not None:
-        agree = np.mean([_set_jaccard(r["pred"], b["pred"]) for r, b in zip(results, baseline_results)])
+        agree = np.mean([_set_jaccard(r["pred"], b["pred"], abn) for r, b in zip(results, baseline_results)])
         out["lesion_agreement_rate_vs_baseline"] = float(agree)
     return out
 
@@ -193,6 +202,12 @@ def _load_generators_critic(config: dict):
             generators.append(build_generator(gc))
     else:
         generators = [build_generator(gen_cfg)]
+    # critic이 데이터셋 label space(어떤 finding을 보고하는지)를 '인지'하게 주입한다.
+    # → critique/rewrite가 그 데이터셋의 finding 어휘에 맞춰 STYLE_PROFILE을 최적화.
+    label_space = config.get("label_space", "chexbert_14")
+    labeler = build_labeler({"label_space": label_space})
+    crit_cfg.setdefault("label_space", label_space)
+    crit_cfg.setdefault("label_names", _abnormal(labeler.labels))
     # 중요: transformers from_pretrained는 스레드 동시 로딩에 안전하지 않다.
     # 생성기들을 '순차로' 먼저 로드해 두면, 이후 _generate_dev의 스레드 병렬 생성은 안전하다.
     for g in generators:
@@ -200,7 +215,7 @@ def _load_generators_critic(config: dict):
             g.load()
         except Exception as e:
             print(f"[textgrad] generator load warn: {e}", flush=True)
-    return generators, build_critic(crit_cfg)
+    return generators, build_critic(crit_cfg), labeler
 
 
 def _trace_init(path: Path, config: dict, init_style: str, n_dev: int, n_gen: int) -> None:
@@ -280,14 +295,14 @@ def run_prompt_optimization(config: dict) -> dict:
         dev = df.head(dev_size)
     dev_rows = [r.to_dict() for _, r in dev.iterrows()]
 
-    generators, critic = _load_generators_critic(config)
-    labeler = CheXbertLikeLabeler()
+    generators, critic, labeler = _load_generators_critic(config)
+    abn = _abnormal(labeler.labels)                    # 이 데이터셋의 abnormal finding 목록
     trace_path = Path(out_dir) / "textgrad_trace.md"   # 프롬프트/critic 진행 상세 기록
     _trace_init(trace_path, config, init_style, len(dev_rows), len(generators))
 
     # baseline
     baseline_results = _generate_dev(generators, dev_rows, init_style, labeler)
-    baseline_metrics = _aggregate_metrics(baseline_results, baseline_results)
+    baseline_metrics = _aggregate_metrics(baseline_results, labeler.labels, baseline_results)
     baseline_lesion = [r["lesion_score"] for r in baseline_results]
     _trace_append = lambda t: open(trace_path, "a", encoding="utf-8").write(t + "\n")
     _trace_append(
@@ -323,8 +338,8 @@ def run_prompt_optimization(config: dict) -> dict:
         # 1. critic 피드백: '현재 best' 예측 기준으로 비평 -> epoch마다 새 방향 탐색
         critiques = []
         for r in current_results[:critique_size]:
-            gt_abn = {l for l in _ABNORMAL_LABELS if r["gt"].get(l, 0) == 1}
-            pred_abn = {l for l in _ABNORMAL_LABELS if r["pred"].get(l, 0) == 1}
+            gt_abn = {l for l in abn if r["gt"].get(l, 0) == 1}
+            pred_abn = {l for l in abn if r["pred"].get(l, 0) == 1}
             sample_metrics = {
                 "missed_labels": sorted(gt_abn - pred_abn),
                 "hallucinated_labels": sorted(pred_abn - gt_abn),
@@ -340,7 +355,7 @@ def run_prompt_optimization(config: dict) -> dict:
 
         # 3. candidate로 재생성 + metric
         cand_results = _generate_dev(generators, dev_rows, candidate_style, labeler)
-        cand_metrics = _aggregate_metrics(cand_results, baseline_results)
+        cand_metrics = _aggregate_metrics(cand_results, labeler.labels, baseline_results)
         cand_lesion = [r["lesion_score"] for r in cand_results]
 
         # 4. 병변 보존 통계 gate (병변 유사도 유지 검정)

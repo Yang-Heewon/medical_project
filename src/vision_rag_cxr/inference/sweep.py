@@ -20,7 +20,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 import pandas as pd
 
 from vision_rag_cxr.datasets.splitters import create_splits
-from vision_rag_cxr.datasets.labeler_chexbert import CheXbertLikeLabeler
+from vision_rag_cxr.datasets.labeler_chexbert import build_labeler
 from vision_rag_cxr.datasets.label_spaces import resolve_labels
 from vision_rag_cxr.evaluation.chexbert_metrics import labels_json_to_matrix, multilabel_scores
 from vision_rag_cxr.inference.experiments.impression_experiment import ImpressionExperiment
@@ -40,11 +40,12 @@ def _log(out_dir, msg):
         f.write(f"[{_now()}] {msg}\n")
 
 
-def _impression_metrics(pred_csv: str, labels: list[str]) -> dict:
-    """생성 impression 평가: (1) 텍스트(BERTScore/ROUGE vs GT impression) (2) 라벨 CheXbert F1.
-    ROCO처럼 라벨이 없으면 F1은 0 근처지만 텍스트 지표가 핵심."""
+def _impression_metrics(pred_csv: str, labels: list[str], label_space: str = "chexbert_14") -> dict:
+    """생성 impression 평가: (1) 텍스트(BERTScore/ROUGE vs GT impression) (2) 라벨 F1.
+    채점기는 label_space에 맞춰 plug-in (PadChest-GR이면 24-finding 패턴). ROCO처럼 라벨이 없으면
+    F1은 0 근처지만 텍스트 지표가 핵심."""
     df = pd.read_csv(pred_csv)
-    lab = CheXbertLikeLabeler()
+    lab = build_labeler({"label_space": label_space})
     preds, gts = [], []
     pred_texts, gt_texts = [], []
     for _, r in df.iterrows():
@@ -191,7 +192,7 @@ def run_sweep(cfg: dict):
             else:
                 ImpressionExperiment(cfg_exp).run(gen)
             pred_csv = str(exp_dir / "predictions.csv")
-            metrics = _impression_metrics(pred_csv, labels) if task == "impression" else {}
+            metrics = _impression_metrics(pred_csv, labels, label_space) if task == "impression" else {}
             row = {"combo_id": combo_id, "seed": seed, "generator": gen_tag,
                    "encoder": enc_tag, "rag_mode": rag_mode, "task": task,
                    "status": "ok", "predictions": pred_csv, "error": ""}

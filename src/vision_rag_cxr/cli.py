@@ -26,6 +26,7 @@ from vision_rag_cxr.registries import (  # noqa: E402
     DATASET_CATALOG as DATASETS,
     ENCODER_CATALOG as ENCODERS,
     GENERATOR_CATALOG as GENERATORS,
+    LABELER_CATALOG as LABELERS,
 )
 
 
@@ -42,6 +43,9 @@ def cmd_list(args):
     print("\n=== ENCODERS (plug-in) ===")
     for k, v in ENCODERS.items():
         print(f"  {k:14s} {v.get('model_name_or_path', v['vision_encoder_name'])}")
+    print("\n=== LABELERS (plug-in, label_space별 채점기) ===")
+    for k, v in LABELERS.items():
+        print(f"  {k:14s} {v}")
 
 
 # ---- ② build ----------------------------------------------------------------

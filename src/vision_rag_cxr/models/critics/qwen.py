@@ -26,6 +26,9 @@ class QwenCritic(BaseCritic):
         # serve_backend(transformers/vllm/sglang)는 backend가 real일 때의 serving 엔진 힌트다.
         self.backend = str(config.get("backend", "placeholder")).lower()
         self.model_name_or_path = config.get("model_name_or_path", "Qwen/Qwen3.5-9B")
+        # critic이 인지하는 데이터셋 라벨 공간(이 데이터셋이 보고하는 finding 어휘).
+        self.label_space = str(config.get("label_space", "")) or "(unspecified)"
+        self.label_names = list(config.get("label_names", []) or [])
         self._loaded = False
         self.model = None
         self.tokenizer = None
@@ -78,6 +81,21 @@ class QwenCritic(BaseCritic):
         new_tokens = out[0][inputs["input_ids"].shape[-1]:]
         return self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
+    def _label_awareness(self) -> str:
+        """critic 프롬프트에 주입할 '데이터셋 label space 인지' 문구.
+
+        이 데이터셋이 실제로 보고하는 finding 어휘를 알려, STYLE_PROFILE이 그 데이터셋의
+        보고 카테고리/용어에 맞춰 최적화되도록 한다 (병변 검출 자체는 바꾸지 않는다)."""
+        if not self.label_names:
+            return ""
+        shown = ", ".join(self.label_names[:40])
+        return (
+            f"\nThis dataset's report label space is '{self.label_space}'. The findings it actually "
+            f"reports are: {shown}. Tailor wording/terminology to how THESE findings are phrased in this "
+            f"dataset, and do not introduce finding categories outside this space. The frozen model's "
+            f"lesion detection over these categories must stay unchanged.\n"
+        )
+
     # --- critic API ----------------------------------------------------------
     def critique(self, prediction: str, target: str, sample: dict, metrics: dict) -> str:
         # plug-in/out: 무엇을 비평할지 (config로 교체)
@@ -126,6 +144,7 @@ class QwenCritic(BaseCritic):
         user = (
             f"Reference impression (dataset gold style):\n{target}\n\n"
             f"Generated impression:\n{prediction}\n\n"
+            f"{self._label_awareness()}"
             "Point out concrete STYLE differences vs the reference: wording, structure/sectioning, length/conciseness, "
             "terminology, phrasing, punctuation, formatting. Give actionable feedback to make the generated impression's "
             "STYLE match the reference. Do NOT ask to add or remove clinical findings — the model's lesion detection "
@@ -165,6 +184,7 @@ class QwenCritic(BaseCritic):
         user = (
             f"Current STYLE_PROFILE:\n{current_style_profile}\n\n"
             f"Aggregated metric summary: {metric_summary}\n\n"
+            f"{self._label_awareness()}"
             f"Critic feedback:\n- {joined}\n\n"
             "Rewrite an improved STYLE_PROFILE that improves impression wording/structure/completeness and "
             "dataset style, while keeping lesion detection unchanged (no increase in missed findings, "
