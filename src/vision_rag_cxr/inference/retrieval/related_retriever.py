@@ -93,6 +93,15 @@ class RelatedRetriever:
         self.labels = _resolve_retriever_labels(config)
         self.image_embeddings = np.asarray(image_embeddings, dtype="float32")
         self.text_embeddings = None if text_embeddings is None else np.asarray(text_embeddings, dtype="float32")
+        # DB(support) image+text 융합 (CLIP 공유 latent): support엔 image·impression 다 있으므로
+        # searchable index = normalize((1-β)·image + β·text)로 저장 → 관련 병변이 더 잘 뭉침.
+        # query는 image-only로 이 융합 index를 검색(유출 없음). β=support_text_fusion_weight(text 비중).
+        beta = float(config.get("support_text_fusion_weight", 0.0) or 0.0)
+        if beta > 0.0 and self.text_embeddings is not None:
+            def _n(M):
+                return M / (np.linalg.norm(M, axis=1, keepdims=True) + 1e-8)
+            fused = (1.0 - beta) * _n(self.image_embeddings) + beta * _n(self.text_embeddings)
+            self.image_embeddings = _n(fused).astype("float32")
         self.label_vectors = label_vectors if label_vectors is not None else _label_matrix_from_metadata(self.metadata, self.labels)
         self.encoder = build_vision_encoder(config)
 

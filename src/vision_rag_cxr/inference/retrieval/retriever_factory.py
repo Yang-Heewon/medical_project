@@ -31,6 +31,7 @@ def build_retriever_config(experiment_config: dict) -> dict:
         "w_img",
         "w_text",
         "w_label",
+        "support_text_fusion_weight",
         "label_space",
     ]:
         if key in experiment_config:
