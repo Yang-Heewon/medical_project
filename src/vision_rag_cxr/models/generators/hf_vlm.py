@@ -105,7 +105,17 @@ class HFVLMGenerator(BaseGenerator):
         p = Path(str(path))
         if not p.exists():
             return None
-        img = Image.open(p).convert("RGB")
+        img = Image.open(p)
+        # 16-bit/high-bit CXR(PadChest 등, mode I;16/I)는 PIL convert("RGB")가 흰색으로 깨진다.
+        # min-max로 8-bit 정규화(윈도잉) 후 RGB로 변환해야 VLM이 실제 영상을 본다.
+        if img.mode in ("I", "I;16", "I;16B", "I;16L", "F") or (img.mode == "L" and getattr(img, "bits", 8) > 8):
+            import numpy as _np
+            arr = _np.asarray(img).astype("float32")
+            lo, hi = float(arr.min()), float(arr.max())
+            arr = (arr - lo) / (hi - lo + 1e-8) * 255.0
+            img = Image.fromarray(arr.astype("uint8")).convert("RGB")
+        else:
+            img = img.convert("RGB")
         # 기본은 PIL 선축소 없이 원본을 넘겨, VLM 프로세서가 자기 네이티브 사이즈로 리사이즈하게 한다
         # (공정성: 같은 VLM이 실제로 받는 해상도). 토큰/메모리 상한은 processor의 max_pixels로 묶는다.
         # max_image_size를 명시적으로 0이 아닌 값으로 주면 (레거시) 긴 변을 그 값으로 선축소한다.

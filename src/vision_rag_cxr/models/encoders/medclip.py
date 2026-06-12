@@ -65,7 +65,15 @@ class MedCLIPEncoder(BaseVisionEncoder):
     def _open_rgb(path: str) -> Image.Image:
         if not path or not Path(path).exists():
             raise FileNotFoundError(f"image path not found: {path}")
-        return Image.open(path).convert("RGB")
+        img = Image.open(path)
+        # 16-bit/high-bit CXR(PadChest 등)는 PIL convert("RGB")가 흰색으로 깨진다 → min-max 8-bit 정규화.
+        if img.mode in ("I", "I;16", "I;16B", "I;16L", "F"):
+            import numpy as _np
+            arr = _np.asarray(img).astype("float32")
+            lo, hi = float(arr.min()), float(arr.max())
+            arr = (arr - lo) / (hi - lo + 1e-8) * 255.0
+            return Image.fromarray(arr.astype("uint8")).convert("RGB")
+        return img.convert("RGB")
 
     def encode_image(self, frontal_path: str, lateral_path: str | None = None) -> np.ndarray:
         """frontal/lateral image embedding을 만든다."""
