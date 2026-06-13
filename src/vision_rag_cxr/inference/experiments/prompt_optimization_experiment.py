@@ -94,10 +94,27 @@ def _set_jaccard(a: dict[str, int], b: dict[str, int], abn: list[str]) -> float:
     return len(pa & pb) / union if union else 1.0
 
 
-def _gen_one(generator, row: dict, style_profile: str, labeler) -> dict:
+# full-prompt 최적화 seed: '깔끔한 진단 프롬프트'에서 시작. TextGrad가 출력포맷/소견 열거 방식까지
+# 전체를 다시 쓸 수 있다(style 조각만이 아니라). {modality}는 sample별 치환, mentioned_findings 키는 채점용으로 유지.
+FULL_PROMPT_INIT = (
+    "You are an expert radiologist examining a {modality}.\n"
+    "Write the radiology IMPRESSION.\n"
+    "- State every abnormal finding you observe, concisely, in standard radiology terminology.\n"
+    "- Do not default to a normal impression when abnormalities are visible; do not invent findings.\n\n"
+    "Output JSON only:\n"
+    '{"impression": "<concise impression of the findings>", '
+    '"mentioned_findings": ["<finding 1>", "..."], "no_finding_claim": true/false}'
+)
+
+
+def _gen_one(generator, row: dict, style_profile: str, labeler, full_prompt: bool = False) -> dict:
     # modality는 sample별로 채운다(데이터셋이 chest가 아닐 수 있음 → chest 고정 금지).
-    prompt = render_prompt(IMPRESSION_PROMPT, style_profile=style_profile,
-                           context_examples="", modality=row.get("modality"))
+    if full_prompt:
+        # full-prompt 최적화: style_profile 인자가 '전체 프롬프트' 텍스트를 담는다(출력포맷 포함). {modality}만 치환.
+        prompt = style_profile.replace("{modality}", str(row.get("modality") or "medical image"))
+    else:
+        prompt = render_prompt(IMPRESSION_PROMPT, style_profile=style_profile,
+                               context_examples="", modality=row.get("modality"))
     raw = generator.generate_impression(row, prompt, context_examples=None)
     pred = _pred_binary_from_raw(raw, labeler)
     gt = _gt_binary(row, labeler.labels)
@@ -115,12 +132,13 @@ def _gen_one(generator, row: dict, style_profile: str, labeler) -> dict:
     }
 
 
-def _generate_dev(generators, dev_rows: list[dict], style_profile: str, labeler) -> list[dict]:
+def _generate_dev(generators, dev_rows: list[dict], style_profile: str, labeler,
+                  full_prompt: bool = False) -> list[dict]:
     """dev set impression 생성. generators가 여러 개면 GPU별 데이터-병렬(연속 chunk)로 동시 생성."""
     from tqdm import tqdm
     gens = generators if isinstance(generators, list) else [generators]
     if len(gens) == 1:
-        return [_gen_one(gens[0], r, style_profile, labeler)
+        return [_gen_one(gens[0], r, style_profile, labeler, full_prompt)
                 for r in tqdm(dev_rows, desc="textgrad-gen", mininterval=10.0)]
     import math
     from concurrent.futures import ThreadPoolExecutor
@@ -130,7 +148,7 @@ def _generate_dev(generators, dev_rows: list[dict], style_profile: str, labeler)
     chunks = [dev_rows[i * size : (i + 1) * size] for i in range(n)]
     def _run(gi):
         # GPU별 진행바(스레드별 라인). 로그 폭주 방지 위해 mininterval 크게.
-        return [_gen_one(gens[gi], r, style_profile, labeler)
+        return [_gen_one(gens[gi], r, style_profile, labeler, full_prompt)
                 for r in tqdm(chunks[gi], desc=f"gen-gpu{gi}", position=gi, mininterval=10.0)]
     with ThreadPoolExecutor(max_workers=n) as ex:
         parts = list(ex.map(_run, range(n)))  # 순서 보존(연속 chunk)
@@ -280,7 +298,12 @@ def run_prompt_optimization(config: dict) -> dict:
     dev_size = int(config.get("dev_sample_size", 64))
     critique_size = int(config.get("critique_sample_size", min(8, dev_size)))
     # style_profile_init은 plug-in: 카탈로그 이름 | 파일 경로 | 리터럴 텍스트 모두 허용.
-    init_style = build_style_profile(config.get("style_profile_init"), default=BASE_STYLE_PROFILE)
+    # full-prompt 모드: STYLE_PROFILE 조각이 아니라 '전체 프롬프트'(출력포맷 포함)를 최적화한다.
+    full_mode = bool(config.get("optimize_full_prompt", False))
+    if full_mode:
+        init_style = build_style_profile(config.get("style_profile_init"), default=FULL_PROMPT_INIT)
+    else:
+        init_style = build_style_profile(config.get("style_profile_init"), default=BASE_STYLE_PROFILE)
     accept_rule = config.get("acceptance_rule", {})
     gate_cfg = config.get("lesion_preservation_gate", {}) or {}
 
@@ -309,7 +332,7 @@ def run_prompt_optimization(config: dict) -> dict:
     _trace_init(trace_path, config, init_style, len(dev_rows), len(generators))
 
     # baseline
-    baseline_results = _generate_dev(generators, dev_rows, init_style, labeler)
+    baseline_results = _generate_dev(generators, dev_rows, init_style, labeler, full_mode)
     baseline_metrics = _aggregate_metrics(baseline_results, labeler.labels, baseline_results)
     baseline_lesion = [r["lesion_score"] for r in baseline_results]
     _trace_append = lambda t: open(trace_path, "a", encoding="utf-8").write(t + "\n")
@@ -359,10 +382,13 @@ def run_prompt_optimization(config: dict) -> dict:
             )
 
         # 2. candidate STYLE_PROFILE 생성 (현재 best prompt를 critic이 개선)
-        candidate_style = critic.rewrite_style_profile(current_style, critiques, best_metrics)
+        if full_mode:
+            candidate_style = critic.rewrite_full_prompt(current_style, critiques, best_metrics)
+        else:
+            candidate_style = critic.rewrite_style_profile(current_style, critiques, best_metrics)
 
         # 3. candidate로 재생성 + metric
-        cand_results = _generate_dev(generators, dev_rows, candidate_style, labeler)
+        cand_results = _generate_dev(generators, dev_rows, candidate_style, labeler, full_mode)
         cand_metrics = _aggregate_metrics(cand_results, labeler.labels, baseline_results)
         cand_lesion = [r["lesion_score"] for r in cand_results]
 

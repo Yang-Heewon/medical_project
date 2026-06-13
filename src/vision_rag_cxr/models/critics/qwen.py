@@ -192,6 +192,34 @@ class QwenCritic(BaseCritic):
         )
         return self._chat(system, user)
 
+    def rewrite_full_prompt(self, current_prompt: str, critiques: list[str], metric_summary: dict) -> str:
+        """전체 프롬프트(태스크 지시 + 출력 포맷)를 최적화. style 조각만이 아니라 구조 전체를 바꿀 수 있다.
+        제약: 출력은 'impression'과 'mentioned_findings' 키를 가진 JSON 유지, {modality} 자리표시자 유지."""
+        if self.backend in {"placeholder", "dummy", "mock"}:
+            return current_prompt
+        system = (
+            "You optimize the FULL prompt (task instructions AND output format) given to a FROZEN "
+            "radiology vision-language model. You may restructure ANYTHING — how findings are elicited, "
+            "step-by-step reasoning, and the output format — to maximize lesion-detection accuracy "
+            "(the model tends to collapse to a normal impression; counter that). "
+            "HARD CONSTRAINTS you must keep: (1) the prompt must instruct the model to output JSON containing "
+            "the keys \"impression\" (prose) and \"mentioned_findings\" (a list of the present finding labels); "
+            "(2) keep the literal placeholder {modality} where the image type is named; "
+            "(3) do not invent findings — only report what is visible."
+        )
+        joined = "\n- ".join(critiques[:20])
+        user = (
+            f"Current FULL prompt:\n{current_prompt}\n\n"
+            f"Aggregated metric summary: {metric_summary}\n\n"
+            f"{self._label_awareness()}"
+            f"Critic feedback (per-sample misses/hallucinations):\n- {joined}\n\n"
+            "Rewrite an improved FULL prompt that makes the frozen model detect and name MORE of the truly "
+            "present findings (higher recall and F1) without inventing findings. You may add an explicit "
+            "checklist of the candidate findings above and ask the model to mark which are present. "
+            "Keep the JSON output contract and the {modality} placeholder. Output ONLY the new prompt text."
+        )
+        return self._chat(system, user)
+
 
 def build_critic(config: dict) -> QwenCritic:
     """critic config에서 critic을 만든다. 현재는 Qwen 계열만 지원."""
