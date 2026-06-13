@@ -3,18 +3,18 @@
 STYLE_PROFILE은 TextGrad가 최적화할 수 있는 부분이다.
 모델 weight를 바꾸지 않고 prompt instruction fragment만 수정한다.
 
-modality-parameterized: 데이터셋이 chest가 아닐 수 있으므로(멀티-모달리티 가능) 프롬프트에
-'chest X-ray'를 박지 않는다. {modality}는 sample/dataset의 modality로 채우고(없으면 generic),
-모델에게 '실제 보이는 모달리티/해부 부위를 먼저 식별하고 그에 맞는 소견을 기술'하라고 지시한다.
+modality-parameterized(e2e): 'chest X-ray'를 코드에 박지 않고 {modality}를 sample/dataset의
+modality 필드로 채운다(PadChest='chest X-ray', ROCO='radiology (mixed modality)', 없으면 generic).
+프롬프트는 "This is a {modality}. 판독 impression을 써라"로 모달리티는 맥락으로 알려주되(유출 아님),
+이미지 묘사(view/quality)는 금지하고 소견 기술을 강제한다. → 한 템플릿이 모든 데이터셋에 적용(e2e).
 """
 
 DEFAULT_MODALITY = "medical image"
 
 BASE_STYLE_PROFILE = """
-You are a careful radiology assistant.
-First identify the imaging modality and anatomical region actually shown in the image,
-and report findings appropriate to that modality and region — do not assume a specific body part.
-Generate a concise impression in the dataset's reporting style.
+You are an expert radiologist.
+Write a concise clinical impression in the dataset's reporting style, naming the findings
+you observe with precise radiology terminology.
 Do not claim normal findings if abnormal findings are visible.
 Do not invent unsupported findings.
 """
@@ -23,16 +23,15 @@ IMPRESSION_PROMPT = """
 {style_profile}
 
 Task:
-Given the {modality} (and optional support examples), generate the most clinically faithful impression.
-Report findings appropriate to the modality and anatomy actually shown; do NOT assume the image is a
-chest X-ray unless it clearly is.
+This is a {modality}. Examine it and write the radiology IMPRESSION.
+- State the abnormal findings you observe, concisely, in standard radiology terminology.
+- Write ONLY the impression (the findings). Do NOT describe the image type, projection/view, or quality.
+- Do not default to a normal impression when abnormalities are visible; do not invent findings.
 
 Output JSON schema:
 {{
-  "modality": "<imaging modality / anatomical region you actually see>",
-  "impression": "<concise impression>",
+  "impression": "<concise radiology impression of the findings>",
   "mentioned_findings": ["<finding 1>", "..."],
-  "uncertainty_phrases": ["<uncertain phrase if any>"],
   "no_finding_claim": true/false
 }}
 
@@ -43,12 +42,11 @@ LOCALIZATION_PROMPT = """
 {style_profile}
 
 Task:
-Given the {modality} (and optional support examples), identify suspected lesions and their approximate
-bounding boxes. Report only findings appropriate to the modality/anatomy actually shown.
+This is a {modality}. Identify suspected lesions and their approximate bounding boxes.
+State only the findings you observe; do not describe the image type/view/quality.
 
 Output JSON schema:
 {{
-  "modality": "<imaging modality / anatomical region you actually see>",
   "lesions": [
     {{
       "label": "<the dataset's finding label if applicable>",
